@@ -2,7 +2,7 @@
 # One Dockerfile for both Node services. Pick one with --build-arg APP=api (or worker):
 #   docker build --build-arg APP=api -t sotto-api .
 # Multi-stage: dependencies and compilers stay in the build stages; the runtime image only gets
-# compiled JavaScript and production node_modules.
+# compiled JavaScript and production node_modules...
 
 ARG NODE_VERSION=24
 
