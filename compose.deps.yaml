@@ -1,0 +1,73 @@
+# Backing services for local development of sotto-api.
+#   pnpm deps:up        → start them
+#   pnpm deps:down      → stop them (data is kept in named volumes)
+# The full stack (web + api + worker + transcriber) lives in sotto-platform/local/compose.yaml.
+name: sotto-deps
+
+services:
+  postgres:
+    # pgvector's image = official Postgres + the vector extension.
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: sotto
+      POSTGRES_PASSWORD: sotto
+      POSTGRES_DB: sotto
+    ports: ['5432:5432']
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/<major>, so mount the parent.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sotto -d sotto']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: sotto
+      RABBITMQ_DEFAULT_PASS: sotto
+    ports:
+      - '5672:5672' # AMQP
+      - '15672:15672' # management UI → http://localhost:15672 (sotto / sotto)
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  s3:
+    # S3-compatible storage for local work. MinIO stopped publishing community images in 2025,
+    # so we use SeaweedFS (Apache-2.0). Used from Phase 4.
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -s3 -s3.port=8333
+    ports: ['8333:8333']
+    volumes:
+      - s3data:/data
+
+  mailpit:
+    # Catches every email the app sends in dev → http://localhost:8025
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+
+  ollama:
+    # Optional local models: `docker compose -f compose.deps.yaml --profile ai up -d`
+    image: ollama/ollama:latest
+    profiles: ['ai']
+    ports: ['11434:11434']
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  pgdata:
+  s3data:
+  ollama:

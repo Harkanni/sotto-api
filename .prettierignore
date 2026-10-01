@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+**/dist
+**/generated
+**/coverage
+services/transcriber
+openapi.json

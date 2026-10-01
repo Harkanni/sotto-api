@@ -1,0 +1,136 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Keeps generated files honest. On pull requests from this repo it regenerates the lockfiles and
+  # openapi.json and commits them to the PR branch if they changed (the agent that writes most
+  # PRs can't reach npm/PyPI). On main, the `node` job fails instead if anything is stale.
+  sync:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: pnpm install --no-frozen-lockfile
+      - run: uv lock
+        working-directory: services/transcriber
+      - run: pnpm build
+      - run: pnpm openapi
+      - run: pnpm format
+      - run: uv run --directory services/transcriber ruff format .
+      - name: Commit regenerated files
+        run: |
+          git add -A
+          if git diff --cached --quiet; then echo "Generated files are up to date."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: regenerate lockfiles, openapi.json and formatting"
+          git push
+
+  node:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: ${{ hashFiles('pnpm-lock.yaml') != '' && 'pnpm' || '' }}
+      - name: Install
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
+          else echo "::warning::No pnpm-lock.yaml yet; the sync job will commit one."; pnpm install --no-frozen-lockfile; fi
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: openapi.json is up to date
+        if: hashFiles('openapi.json') != ''
+        run: |
+          pnpm openapi
+          git diff --exit-code openapi.json || (echo "::error::openapi.json is stale. Run 'pnpm build && pnpm openapi' and commit it."; exit 1)
+
+  python:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: services/transcriber
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: uv sync $( [ -f uv.lock ] && echo --locked )
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  # Builds the real images and boots them against real Postgres, Redis and RabbitMQ, then waits
+  # for every /readyz to answer. This is the "one command starts everything" check.
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build images
+        run: |
+          docker build --build-arg APP=api -t sotto-api:ci .
+          docker build --build-arg APP=worker -t sotto-worker:ci .
+          docker build -t sotto-transcriber:ci services/transcriber
+      - name: Start dependencies
+        run: docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq
+      - name: Migrate, start services, wait for readiness
+        env:
+          NET: sotto-deps_default
+          DB: postgresql://sotto:sotto@postgres:5432/sotto
+          MQ: amqp://sotto:sotto@rabbitmq:5672
+        run: |
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
+          docker compose -f compose.deps.yaml exec -T postgres psql -U sotto -d sotto -c '\d leads'
+          docker run -d --name api --network $NET -p 4000:4000 \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ sotto-api:ci
+          docker run -d --name worker --network $NET -p 4100:4100 -e RABBITMQ_URL=$MQ sotto-worker:ci
+          docker run -d --name transcriber -p 5000:5000 sotto-transcriber:ci
+          for i in $(seq 1 45); do
+            if curl -fsS localhost:4000/readyz && curl -fsS localhost:4100/readyz && curl -fsS localhost:5000/readyz; then
+              echo; curl -fsS localhost:4000/api/v1/status; echo
+              # The images' own HEALTHCHECKs must agree (Compose --wait and the demo deploy rely on them).
+              for c in api worker transcriber; do
+                for j in $(seq 1 20); do
+                  [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = healthy ] && break; sleep 3
+                done
+                docker inspect -f "$c {{.State.Health.Status}}" $c
+                [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = healthy ] || { docker logs $c; exit 1; }
+              done
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs api; docker logs worker; docker logs transcriber; exit 1
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --redact --verbose

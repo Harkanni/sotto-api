@@ -16,15 +16,15 @@ If `../sotto-platform` isn't there, clone it: `git clone https://github.com/Hark
 
 ## Layout
 
-| Path | Holds |
-| --- | --- |
-| `apps/api` | NestJS REST + SSE/WebSocket API (`/api/v1`), OpenAPI generated from code |
-| `apps/worker` | Queue consumer: extraction, chunking, embeddings, meeting insights |
-| `services/transcriber` | Python FastAPI service; engine chosen by `TRANSCRIBER_ENGINE`; never touches the DB |
-| `packages/db` | Prisma 7 schema, migrations, seed, tenant extension |
-| `packages/ai` | Provider interfaces + registry (chat, embeddings, transcription, diarization, meeting bot) |
-| `packages/contracts` | Zod schemas for queue messages and shared types |
-| `packages/config` | Env parsing and shared tooling config |
+| Path                   | Holds                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `apps/api`             | NestJS REST + SSE/WebSocket API (`/api/v1`), OpenAPI generated from code                   |
+| `apps/worker`          | Queue consumer: extraction, chunking, embeddings, meeting insights                         |
+| `services/transcriber` | Python FastAPI service; engine chosen by `TRANSCRIBER_ENGINE`; never touches the DB        |
+| `packages/db`          | Prisma 7 schema, migrations, seed, tenant extension                                        |
+| `packages/ai`          | Provider interfaces + registry (chat, embeddings, transcription, diarization, meeting bot) |
+| `packages/contracts`   | Zod schemas for queue messages and shared types                                            |
+| `packages/config`      | Env parsing and shared tooling config                                                      |
 
 ## Rules for this repo
 

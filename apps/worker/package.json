@@ -1,0 +1,26 @@
+{
+  "name": "@sotto/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & sleep 5 && node --watch-path=dist --env-file-if-exists=../../.env dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sotto/config": "workspace:*",
+    "@sotto/contracts": "workspace:*",
+    "amqplib": "^0.10.9",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "vitest": "^4.1.0"
+  }
+}

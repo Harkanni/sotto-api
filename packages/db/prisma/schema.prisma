@@ -1,0 +1,29 @@
+// Sotto database schema.
+// Phase 1 holds only what's needed to prove the pipeline (Lead); each phase adds its models from
+// sotto-platform/docs/PLAN.md → Data model. Conventions:
+//   - snake_case table and column names via @@map / @map
+//   - every tenant-owned table has workspace_id (enforced by a client extension from Phase 3)
+//   - Postgres extensions (vector, pg_trgm, citext) are created in raw SQL migrations
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Waitlist and demo-form sign-ups (the Phase 8 marketing site writes here; the old MongoDB
+/// waitlist is imported into it).
+model Lead {
+  id        String   @id @default(cuid())
+  email     String   @unique @db.Citext
+  teamSize  String?  @map("team_size")
+  source    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("leads")
+}

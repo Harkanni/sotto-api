@@ -1,0 +1,76 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/status": {
+      "get": {
+        "operationId": "StatusController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "service",
+                    "version",
+                    "commit",
+                    "environment",
+                    "uptimeSeconds",
+                    "ready",
+                    "checks"
+                  ],
+                  "properties": {
+                    "service": {
+                      "type": "string",
+                      "enum": [
+                        "sotto-api"
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "environment": {
+                      "type": "string"
+                    },
+                    "uptimeSeconds": {
+                      "type": "integer"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Public build and dependency summary, used by the web status page.",
+        "tags": [
+          "status"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Sotto API",
+    "description": "Private AI for your team’s memos and meetings.",
+    "version": "1",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {}
+  }
+}
