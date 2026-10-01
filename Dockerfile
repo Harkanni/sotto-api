@@ -36,7 +36,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 ARG APP
 ARG APP_VERSION=0.0.0-dev
 ARG GIT_SHA=local
-ENV NODE_ENV=production APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA}
+ENV NODE_ENV=production APP=${APP} APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA}
 WORKDIR /app
 COPY --from=build --chown=node:node /out /app
 # Why non-root: the official image ships a "node" user; a compromised process can't touch the image.
@@ -45,5 +45,5 @@ USER node
 EXPOSE 4000 4100
 # Works for both apps: /healthz never depends on the database or queue.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD node -e "const p=process.env.PORT||process.env.WORKER_HEALTH_PORT||4000;fetch('http://127.0.0.1:'+p+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "const p=process.env.APP==='worker'?(process.env.WORKER_HEALTH_PORT||4100):(process.env.PORT||4000);fetch('http://127.0.0.1:'+p+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/main.js"]

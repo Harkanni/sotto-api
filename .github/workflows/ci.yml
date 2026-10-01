@@ -111,7 +111,16 @@ jobs:
           docker run -d --name transcriber -p 5000:5000 sotto-transcriber:ci
           for i in $(seq 1 45); do
             if curl -fsS localhost:4000/readyz && curl -fsS localhost:4100/readyz && curl -fsS localhost:5000/readyz; then
-              echo; curl -fsS localhost:4000/api/v1/status; echo; exit 0
+              echo; curl -fsS localhost:4000/api/v1/status; echo
+              # The images' own HEALTHCHECKs must agree (Compose --wait and the demo deploy rely on them).
+              for c in api worker transcriber; do
+                for j in $(seq 1 20); do
+                  [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = healthy ] && break; sleep 3
+                done
+                docker inspect -f "$c {{.State.Health.Status}}" $c
+                [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = healthy ] || { docker logs $c; exit 1; }
+              done
+              exit 0
             fi
             sleep 2
           done
