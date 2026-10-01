@@ -45,25 +45,25 @@ The whole stack with the web app runs from `sotto-platform` (`task up`).
 
 ## Layout
 
-| Path | What |
-| --- | --- |
-| `apps/api` | NestJS REST API under `/api/v1`; OpenAPI from decorators → `openapi.json` |
-| `apps/worker` | Queue consumer (processing arrives in Phase 4) |
+| Path                   | What                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `apps/api`             | NestJS REST API under `/api/v1`; OpenAPI from decorators → `openapi.json`    |
+| `apps/worker`          | Queue consumer (processing arrives in Phase 4)                               |
 | `services/transcriber` | FastAPI; engine chosen by `TRANSCRIBER_ENGINE` (Phase 1: labelled mock only) |
-| `packages/db` | Prisma 7 schema, migrations, client factory |
-| `packages/ai` | Provider interfaces, registry, privacy rule (`canSend`), labelled mocks |
-| `packages/contracts` | Zod schemas for queue messages |
-| `packages/config` | Validated environment loading |
+| `packages/db`          | Prisma 7 schema, migrations, client factory                                  |
+| `packages/ai`          | Provider interfaces, registry, privacy rule (`canSend`), labelled mocks      |
+| `packages/contracts`   | Zod schemas for queue messages                                               |
+| `packages/config`      | Validated environment loading                                                |
 
 ## Scripts
 
-| Command | Does |
-| --- | --- |
-| `pnpm build` / `pnpm typecheck` / `pnpm test` | Across every package |
-| `pnpm lint` / `pnpm format` | ESLint / Prettier |
-| `pnpm openapi` | Regenerates `openapi.json` (CI fails if it's stale) |
-| `pnpm db:migrate` | Applies migrations |
-| `docker build --build-arg APP=api .` | api image (`APP=worker` for the worker) |
+| Command                                       | Does                                                |
+| --------------------------------------------- | --------------------------------------------------- |
+| `pnpm build` / `pnpm typecheck` / `pnpm test` | Across every package                                |
+| `pnpm lint` / `pnpm format`                   | ESLint / Prettier                                   |
+| `pnpm openapi`                                | Regenerates `openapi.json` (CI fails if it's stale) |
+| `pnpm db:migrate`                             | Applies migrations                                  |
+| `docker build --build-arg APP=api .`          | api image (`APP=worker` for the worker)             |
 
 ## CI
 

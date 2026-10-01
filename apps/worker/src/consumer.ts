@@ -1,8 +1,7 @@
 import { messageSchemas, type QueueName } from '@sotto/contracts';
 
 export type Decision<T = unknown> =
-  | { action: 'ack'; message: T }
-  | { action: 'reject'; reason: 'invalid_json' | 'invalid_shape' };
+  { action: 'ack'; message: T } | { action: 'reject'; reason: 'invalid_json' | 'invalid_shape' };
 
 /**
  * Validate a raw queue payload against its contract. Invalid messages are rejected without

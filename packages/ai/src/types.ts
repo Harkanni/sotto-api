@@ -81,9 +81,10 @@ export interface TranscriptionProvider extends ProviderInfo {
 // ── Speaker labels ────────────────────────────────────────────────────
 export interface DiarizationProvider extends ProviderInfo {
   readonly capability: 'diarization';
-  diarize(input: { audioRef: string; signal?: AbortSignal }): Promise<
-    Array<{ startMs: number; endMs: number; speaker: string }>
-  >;
+  diarize(input: {
+    audioRef: string;
+    signal?: AbortSignal;
+  }): Promise<Array<{ startMs: number; endMs: number; speaker: string }>>;
 }
 
 // ── Meeting bot (Phase 7) ─────────────────────────────────────────────

@@ -9,7 +9,11 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "prisma", "prisma.config.ts"],
+  "files": [
+    "dist",
+    "prisma",
+    "prisma.config.ts"
+  ],
   "scripts": {
     "generate": "prisma generate",
     "build": "prisma generate && tsc -p tsconfig.json",

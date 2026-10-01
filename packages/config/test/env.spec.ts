@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { baseEnv, EnvError, loadEnv } from '../src/index.js';
 
 describe('loadEnv', () => {
-  const schema = baseEnv.extend({ PORT: z.coerce.number().default(4000), SECRET: z.string().min(8) });
+  const schema = baseEnv.extend({
+    PORT: z.coerce.number().default(4000),
+    SECRET: z.string().min(8),
+  });
 
   it('applies defaults and coerces numbers', () => {
     const env = loadEnv(schema, { SECRET: 'abcdefgh', PORT: '5000' });

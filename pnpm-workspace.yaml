@@ -4,7 +4,7 @@ packages:
 
 # pnpm 10 blocks dependency install scripts by default; allow only the ones we need.
 onlyBuiltDependencies:
-  - "@prisma/engines"
-  - "@swc/core"
+  - '@prisma/engines'
+  - '@swc/core'
   - esbuild
   - prisma

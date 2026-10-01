@@ -35,7 +35,8 @@ async function connect(): Promise<void> {
       const conn = await amqp.connect(env.RABBITMQ_URL);
       const channel = await conn.createChannel();
       await channel.prefetch(4);
-      for (const queue of Object.values(Queues)) await channel.assertQueue(queue, { durable: true });
+      for (const queue of Object.values(Queues))
+        await channel.assertQueue(queue, { durable: true });
 
       await channel.consume(Queues.fileUploaded, (msg) => {
         if (!msg) return;
@@ -57,7 +58,9 @@ async function connect(): Promise<void> {
           void connect();
         }
       });
-      conn.on('error', (error: Error) => log('error', 'queue connection error', { error: error.name }));
+      conn.on('error', (error: Error) =>
+        log('error', 'queue connection error', { error: error.name }),
+      );
       connection = conn;
       log('info', 'connected to queue', { attempt });
       return;
