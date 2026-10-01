@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/generated
+**/coverage
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.git
+.github
+.env
+.env.*
+!.env.example
+services

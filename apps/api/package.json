@@ -1,0 +1,42 @@
+{
+  "name": "@sotto/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/main.js",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & sleep 5 && node --watch-path=dist --env-file-if-exists=../../.env dist/main.js",
+    "openapi": "node dist/openapi.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/platform-express": "^12.1.0",
+    "@nestjs/swagger": "^12.0.0",
+    "@sotto/ai": "workspace:*",
+    "@sotto/config": "workspace:*",
+    "@sotto/contracts": "workspace:*",
+    "@sotto/db": "workspace:*",
+    "amqplib": "^0.10.9",
+    "ioredis": "^5.11.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^12.1.0",
+    "@swc/core": "^1.16.0",
+    "@types/amqplib": "^0.10.7",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.0",
+    "unplugin-swc": "^1.6.0",
+    "vitest": "^4.1.0"
+  }
+}

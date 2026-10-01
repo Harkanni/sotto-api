@@ -1,0 +1,31 @@
+{
+  "name": "sotto-api",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --parallel --filter @sotto/api --filter @sotto/worker run dev",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "db:generate": "pnpm --filter @sotto/db run generate",
+    "db:migrate": "pnpm --filter @sotto/db run migrate:deploy",
+    "openapi": "pnpm --filter @sotto/api run openapi",
+    "deps:up": "docker compose -f compose.deps.yaml up -d",
+    "deps:down": "docker compose -f compose.deps.yaml down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.39.0",
+    "prettier": "^3.9.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}
