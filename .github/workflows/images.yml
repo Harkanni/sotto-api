@@ -1,9 +1,10 @@
 name: images
 
 # On every merge to main: build arm64 images (the demo server is a Graviton t4g), push them to
-# ECR, then ask the demo server to deploy them. AWS access uses GitHub OIDC: no stored AWS keys.
-# Stays idle until sotto-platform's Terraform has run and these repo variables are set:
-#   AWS_ROLE_ARN, AWS_REGION, ECR_REGISTRY
+# ECR, then ask the demo server to deploy them. AWS access uses a stored IAM access key.
+# Stays idle until these repo variables/secrets are set:
+#   Variables: AWS_REGION, ECR_REGISTRY
+#   Secrets:   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 on:
   push:
     branches: [main]
@@ -11,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: images-main
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    if: vars.AWS_ROLE_ARN != ''
+    if: vars.ECR_REGISTRY != ''
     runs-on: ubuntu-24.04-arm
     strategy:
       matrix:
@@ -37,7 +37,8 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
       - uses: aws-actions/amazon-ecr-login@v2.1.7
       - uses: docker/setup-buildx-action@v4.4.1
@@ -65,7 +66,8 @@ jobs:
     steps:
       - uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
       - name: Deploy to the demo server through SSM
         run: |
