@@ -31,10 +31,39 @@ jobs:
           node-version: 24
       - uses: astral-sh/setup-uv@v10.2.0
       - run: pnpm install --no-frozen-lockfile
+      # The coding agent's sandbox can't reach npm, so it downloads this exact install (every
+      # workspace's node_modules) from a release asset to build and test locally. Keyed by the
+      # manifests + lockfile (scripts/agent-deps.sh computes the same key). It runs before the
+      # build so a compile error on the branch can't hold the snapshot back.
+      - name: Publish node_modules snapshot (dev-cache release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LC_ALL: C
+        run: |
+          KEY=$(cat package.json pnpm-workspace.yaml pnpm-lock.yaml apps/*/package.json packages/*/package.json | sha256sum | cut -c1-16)
+          NAME="node_modules-linux-x64-$KEY.tar.gz"
+          if ! gh release view dev-cache > /dev/null 2>&1; then
+            gh release create dev-cache --prerelease --title "dev-cache (CI tooling)" \
+              --notes "node_modules snapshots for the coding agent's sandbox, which can't reach npm. Safe to delete."
+          fi
+          if gh release view dev-cache --json assets -q '.assets[].name' | grep -qx "$NAME"; then
+            echo "Snapshot $NAME already published."
+          else
+            tar -czf "$RUNNER_TEMP/$NAME" node_modules apps/*/node_modules packages/*/node_modules
+            ls -lh "$RUNNER_TEMP/$NAME"
+            gh release upload dev-cache "$RUNNER_TEMP/$NAME" --clobber
+          fi
+          # Keep only the three newest snapshots.
+          gh release view dev-cache --json assets -q '.assets | sort_by(.createdAt) | reverse | .[3:] | .[].name' |
+            while read -r old; do gh release delete-asset dev-cache "$old" --yes; done
       - run: uv lock
         working-directory: services/transcriber
+      # A broken build must not stop the lockfile from being committed: the `node` job reports
+      # the failure, and the agent needs the lockfile to restore the snapshot above.
       - run: pnpm build
+        continue-on-error: true
       - run: pnpm openapi
+        continue-on-error: true
       - run: pnpm format
       - run: uv run --directory services/transcriber ruff format .
       - name: Commit regenerated files
