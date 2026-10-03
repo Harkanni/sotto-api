@@ -2,6 +2,27 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from './generated/prisma/client.js';
 
 export { PrismaClient, Prisma } from './generated/prisma/client.js';
+export type {
+  AuditLog,
+  Collection,
+  CollectionPermission,
+  Invite,
+  Membership,
+  Passkey,
+  Session,
+  User,
+  Workspace,
+} from './generated/prisma/client.js';
+export { Access, Handedness, InviteStatus, Role } from './generated/prisma/enums.js';
+export {
+  CrossTenantWriteError,
+  TENANT_MODELS,
+  forWorkspace,
+  scopeArgs,
+  tenantTransaction,
+  type TenantClient,
+  type TenantModel,
+} from './tenant.js';
 
 /**
  * Prisma 7 talks to Postgres through a driver adapter (node-postgres here). Create one client per

@@ -33,6 +33,12 @@ pnpm dev                # api on :4000, worker health on :4100
 - Probes: `/healthz` (process up) and `/readyz` (database, Redis and queue reachable)
 - RabbitMQ UI: <http://localhost:15672> (sotto / sotto) · Mailpit: <http://localhost:8025>
 
+### Signing in locally
+
+Run the web app too (`pnpm dev` in `../sotto-web`, which forwards `/api/*` here) and open
+<http://localhost:3000>. Ask for a sign-in link; it lands in Mailpit (<http://localhost:8025>).
+Sessions are cookies on the web's origin (`APP_URL`), so sign in through the web app, not port 4000. Google and Microsoft buttons appear once their credentials are in `.env`.
+
 Transcriber:
 
 ```bash
@@ -45,26 +51,38 @@ The whole stack with the web app runs from `sotto-platform` (`task up`).
 
 ## Layout
 
-| Path                   | What                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| `apps/api`             | NestJS REST API under `/api/v1`; OpenAPI from decorators → `openapi.json`    |
-| `apps/worker`          | Queue consumer (processing arrives in Phase 4)                               |
-| `services/transcriber` | FastAPI; engine chosen by `TRANSCRIBER_ENGINE` (Phase 1: labelled mock only) |
-| `packages/db`          | Prisma 7 schema, migrations, client factory                                  |
-| `packages/ai`          | Provider interfaces, registry, privacy rule (`canSend`), labelled mocks      |
-| `packages/contracts`   | Zod schemas for queue messages                                               |
-| `packages/config`      | Validated environment loading                                                |
+| Path                   | What                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `apps/api`             | NestJS REST API under `/api/v1`, Better Auth under `/api/auth`; OpenAPI → `openapi.json` |
+| `apps/worker`          | Queue consumer (processing arrives in Phase 4)                                           |
+| `services/transcriber` | FastAPI; engine chosen by `TRANSCRIBER_ENGINE` (Phase 1: labelled mock only)             |
+| `packages/db`          | Prisma 7 schema, migrations, client factory, tenant-scoped client                        |
+| `packages/ai`          | Provider interfaces, registry, privacy rule (`canSend`), labelled mocks                  |
+| `packages/contracts`   | Zod schemas for queue messages                                                           |
+| `packages/config`      | Validated environment loading                                                            |
 
 ## Scripts
 
-| Command                                       | Does                                                |
-| --------------------------------------------- | --------------------------------------------------- |
-| `pnpm build` / `pnpm typecheck` / `pnpm test` | Across every package                                |
-| `pnpm lint` / `pnpm format`                   | ESLint / Prettier                                   |
-| `pnpm openapi`                                | Regenerates `openapi.json` (CI fails if it's stale) |
-| `pnpm db:migrate`                             | Applies migrations                                  |
-| `docker build --build-arg APP=api .`          | api image (`APP=worker` for the worker)             |
+| Command                                       | Does                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm build` / `pnpm typecheck` / `pnpm test` | Across every package (integration tests need `TEST_DATABASE_URL`) |
+| `pnpm lint` / `pnpm format`                   | ESLint / Prettier                                                 |
+| `pnpm openapi`                                | Regenerates `openapi.json` (CI fails if it's stale)               |
+| `pnpm db:migrate`                             | Applies migrations                                                |
+| `docker build --build-arg APP=api .`          | api image (`APP=worker` for the worker)                           |
 
 ## CI
 
-`ci.yml` runs on every PR: lint, format, typecheck, unit + route tests, the Python checks, a secret scan, and a **smoke test** that builds the real images and boots them against real Postgres, Redis and RabbitMQ. `images.yml` builds arm64 images on merge to `main`, pushes them to ECR and deploys the demo (once the platform Terraform is applied).
+`ci.yml` runs on every PR: lint, format, typecheck, unit + route tests, **integration tests against a real Postgres** (a fresh database per test file, built from the migrations), the Python checks, a secret scan, and a **smoke test** that builds the real images and boots them against real Postgres, Redis and RabbitMQ. `images.yml` builds arm64 images on merge to `main`, pushes them to ECR and deploys the demo (once the platform Terraform is applied).
+
+## Accounts and workspaces
+
+- **Sign-in** is [Better Auth](https://better-auth.com) mounted at `/api/auth/*`: email magic
+  links (any SMTP server), passkeys, Google and Microsoft. Its organization plugin is renamed
+  Workspace, Membership and Invite; roles are owner, admin, member and viewer.
+- **Every `/api/v1` route** passes one guard: a session, the session's active workspace and the
+  caller's role in it, the CSRF token on writes (`X-CSRF-Token`, from `GET /api/v1/me`) and the
+  route's minimum role. Nest's cross-origin protection refuses foreign writes before that.
+- **Tenant data** goes through `forWorkspace(prisma, workspaceId)` from `@sotto/db`, which adds
+  the workspace to every query and refuses writes into another one.
+- **Errors** always look like `{ "error": { "code", "message", "requestId" } }`.

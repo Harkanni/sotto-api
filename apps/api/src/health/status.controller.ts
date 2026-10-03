@@ -1,5 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/auth.guard.js';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { HealthService } from './health.service.js';
 
@@ -14,6 +15,7 @@ export interface StatusResponse {
 }
 
 @ApiTags('status')
+@Public()
 @Controller('status')
 export class StatusController {
   constructor(

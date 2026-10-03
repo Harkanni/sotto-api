@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // An application, not a library: no .d.ts files (Better Auth's inferred types reach into
+    // nested packages that a declaration file couldn't name).
+    "declaration": false
   },
   "include": ["src"]
 }

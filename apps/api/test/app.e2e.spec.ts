@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
-import { configureApp } from '../src/bootstrap.js';
+import { APP_OPTIONS, configureApp } from '../src/bootstrap.js';
 import { DEPENDENCY_CHECKS, type DependencyCheck } from '../src/health/checks.js';
 
 const check = (name: string, healthy: boolean): DependencyCheck => ({
@@ -18,7 +18,7 @@ async function boot(checks: DependencyCheck[]): Promise<INestApplication> {
     .overrideProvider(DEPENDENCY_CHECKS)
     .useValue(checks)
     .compile();
-  const app = moduleRef.createNestApplication({ logger: false });
+  const app = moduleRef.createNestApplication({ ...APP_OPTIONS, logger: false });
   configureApp(app);
   await app.init();
   return app;
