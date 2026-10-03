@@ -28,7 +28,7 @@ def test_transcribe_returns_labelled_mock_segments():
     body = response.json()
     assert body["isMock"] is True
     assert body["segments"][0]["text"].startswith("[mock]")
-    assert body["segments"][1]["endMs"] == body["durationMs"]
+    assert body["segments"][-1]["endMs"] == body["durationMs"]
 
 
 def test_unknown_engine_fails_clearly():
@@ -38,4 +38,4 @@ def test_unknown_engine_fails_clearly():
         assert "Available" in str(error)
     else:
         raise AssertionError("expected UnknownEngineError")
-    assert available_engines() == ["fake"]
+    assert available_engines() == ["fake", "faster-whisper"]

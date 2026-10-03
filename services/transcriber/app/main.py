@@ -1,23 +1,53 @@
+import asyncio
+import contextlib
+import logging
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 
+from app.consumer import Consumer
 from app.contracts import TranscriptionResult
 from app.engines import available_engines, create_engine
 from app.settings import get_settings
+from app.storage import Storage
 
 settings = get_settings()
-# Fail at startup, not on the first request, if the configured engine doesn't exist.
+logging.basicConfig(level=settings.log_level.upper(), format="%(levelname)s %(name)s %(message)s")
+# Fail at startup, not on the first request, if the configured engine doesn't exist or its model
+# can't load.
 engine = create_engine(settings.transcriber_engine)
+consumer = (
+    Consumer(settings.rabbitmq_url, engine, Storage(settings)) if settings.rabbitmq_url else None
+)
 
-MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # recordings can be long; the queue path streams from S3
+MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # the direct endpoint; the queue path streams from S3
+
+
+async def _connect_forever(c: Consumer) -> None:
+    """Keeps trying until the broker answers (it may start after us)."""
+    delay = 1.0
+    while True:
+        try:
+            await c.run()
+            return
+        except Exception as error:  # noqa: BLE001 — any connection failure means "try again"
+            logging.getLogger("transcriber").warning(
+                "queue not reachable yet", extra={"error": type(error).__name__}
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    task = asyncio.create_task(_connect_forever(consumer)) if consumer else None
     yield
+    if task:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 app = FastAPI(title="Sotto transcriber", version="1", lifespan=lifespan)
@@ -29,7 +59,11 @@ def healthz() -> dict[str, str]:
 
 
 @app.get("/readyz")
-def readyz() -> dict[str, str]:
+def readyz(response: Response) -> dict[str, str]:
+    """Ready once the engine is loaded and, when a queue is configured, connected to it."""
+    if consumer and not consumer.connected:
+        response.status_code = 503
+        return {"status": "connecting", "engine": engine.name}
     return {"status": "ok", "engine": engine.name}
 
 
@@ -37,6 +71,7 @@ def readyz() -> dict[str, str]:
 def engines() -> dict[str, object]:
     return {
         "active": engine.name,
+        "model": engine.model,
         "available": available_engines(),
         "dataLocation": engine.data_location,
         "isMock": engine.is_mock,
@@ -60,4 +95,4 @@ async def transcribe(
                 raise HTTPException(status_code=413, detail="audio too large")
             tmp.write(chunk)
         tmp.flush()
-        return engine.transcribe(Path(tmp.name), language)
+        return await asyncio.to_thread(engine.transcribe, Path(tmp.name), language)

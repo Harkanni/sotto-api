@@ -1,12 +1,21 @@
 """Engine registry. Add an engine by writing a class that satisfies `TranscriptionEngine` and
 registering it here; choose it with TRANSCRIBER_ENGINE. No other code changes."""
 
+from collections.abc import Callable
+
 from app.engines.base import TranscriptionEngine
 from app.engines.fake import FakeEngine
 
-_FACTORIES = {
+
+def _faster_whisper() -> TranscriptionEngine:
+    from app.engines.faster_whisper import FasterWhisperEngine
+
+    return FasterWhisperEngine()
+
+
+_FACTORIES: dict[str, Callable[[], TranscriptionEngine]] = {
     "fake": FakeEngine,
-    # Phase 4: "faster-whisper": FasterWhisperEngine,
+    "faster-whisper": _faster_whisper,
 }
 
 

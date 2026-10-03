@@ -141,10 +141,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.2.0
+      # ffmpeg normalises audio (the tests encode every browser format); espeak-ng speaks a
+      # sentence so the real Whisper test has words to find at a known time.
+      - name: Install ffmpeg and espeak-ng
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+      # The Whisper test model (tiny, ~75 MB) is downloaded once and cached between runs.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-tiny-v1
       - run: uv sync $( [ -f uv.lock ] && echo --locked )
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+        env:
+          RUN_WHISPER_TESTS: '1'
 
   # Builds the real images and boots them against real Postgres, Redis and RabbitMQ, then waits
   # for every /readyz to answer. This is the "one command starts everything" check.
@@ -172,8 +183,13 @@ jobs:
           docker run -d --name api --network $NET -p 4000:4000 \
             -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
             -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 sotto-api:ci
-          docker run -d --name worker --network $NET -p 4100:4100 -e RABBITMQ_URL=$MQ sotto-worker:ci
-          docker run -d --name transcriber -p 5000:5000 sotto-transcriber:ci
+          # The worker reads files from S3 only when jobs arrive, so no storage is needed to be
+          # ready; AI_EMBEDDINGS=fake because there's no Ollama here (a labelled mock).
+          docker run -d --name worker --network $NET -p 4100:4100 -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
+          # Ready means "connected to the queue"; the labelled mock engine skips the model download.
+          docker run -d --name transcriber --network $NET -p 5000:5000 -e RABBITMQ_URL=$MQ \
+            -e TRANSCRIBER_ENGINE=fake sotto-transcriber:ci
           for i in $(seq 1 45); do
             if curl -fsS localhost:4000/readyz && curl -fsS localhost:4100/readyz && curl -fsS localhost:5000/readyz; then
               echo; curl -fsS localhost:4000/api/v1/status; echo

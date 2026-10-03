@@ -8,11 +8,15 @@ dependencies = [
   "uvicorn[standard]>=0.54,<1",
   "pydantic-settings>=2.15,<3",
   "python-multipart>=0.0.20,<1",
+  "faster-whisper>=1.2.1,<2",
+  "aio-pika>=9.5,<10",
+  "boto3>=1.40,<2",
 ]
 
 [dependency-groups]
 dev = [
   "httpx>=0.28,<1",
+  "moto[s3]>=5.2,<6",
   "pytest>=9.1,<10",
   "ruff>=0.16,<1",
 ]
@@ -27,6 +31,10 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
 ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests generate audio with ffmpeg and espeak-ng from PATH.
+"tests/*" = ["S603", "S607"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
