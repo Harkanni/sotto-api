@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     whisper_compute_type: str = "int8"
     whisper_threads: int = 0  # 0 → all cores
     whisper_beam_size: int = 5
+    # Transcribed in windows of this many minutes, so memory doesn't grow with the meeting.
+    whisper_window_minutes: int = 20
     whisper_cache_dir: str | None = None
 
 

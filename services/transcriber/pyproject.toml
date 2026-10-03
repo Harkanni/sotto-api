@@ -11,6 +11,7 @@ dependencies = [
   "faster-whisper>=1.2.1,<2",
   "aio-pika>=9.5,<10",
   "boto3>=1.40,<2",
+  "numpy>=2.2,<3",
 ]
 
 [dependency-groups]
