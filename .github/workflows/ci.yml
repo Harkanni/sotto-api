@@ -153,9 +153,20 @@ jobs:
       - run: uv sync $( [ -f uv.lock ] && echo --locked )
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q
+      - run: uv run pytest -q --junitxml=pytest.xml
         env:
           RUN_WHISPER_TESTS: '1'
+      # Failures as annotations, so they read in the PR without opening the log.
+      - name: Report test failures
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for case in ET.parse("pytest.xml").iter("testcase"):
+              for bad in list(case.iter("failure")) + list(case.iter("error")):
+                  text = (bad.get("message") or "") + " | " + (bad.text or "")[-600:]
+                  print(f"::error title={case.get('name')}::{text.replace(chr(10), ' ')}")
+          PY
 
   # Builds the real images and boots them against real Postgres, Redis and RabbitMQ, then waits
   # for every /readyz to answer. This is the "one command starts everything" check.
