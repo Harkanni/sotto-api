@@ -71,9 +71,11 @@ export class CapturingMailer extends Mailer {
     this.sent.push(message);
   }
 
-  /** The last link sent to `to` (sign-in or invite), as a path on the app's origin. */
-  lastLink(to: string): string {
-    const message = [...this.sent].reverse().find((m) => m.to.toLowerCase() === to.toLowerCase());
+  /** The last link sent to `to` (optionally only links containing `kind`), as a path. */
+  lastLink(to: string, kind?: string): string {
+    const message = [...this.sent]
+      .reverse()
+      .find((m) => m.to.toLowerCase() === to.toLowerCase() && (!kind || m.text.includes(kind)));
     if (!message) throw new Error(`No email to ${to}`);
     const url = /https?:\/\/\S+/.exec(message.text)?.[0];
     if (!url) throw new Error(`No link in the email to ${to}`);

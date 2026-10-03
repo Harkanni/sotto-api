@@ -58,3 +58,18 @@ export function workspaceOf(auth: RequestAuth): { id: string; role: Role } {
   }
   return auth.workspace;
 }
+
+/**
+ * `@AuthHeaders()` — the request's headers as a web `Headers`, for server-side Better Auth calls
+ * (`auth.api.*`), which identify the session from the cookie.
+ */
+export const AuthHeaders = createParamDecorator((_data: unknown, context: ExecutionContext) => {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(
+    context.switchToHttp().getRequest<ApiRequest>().headers,
+  )) {
+    if (Array.isArray(value)) value.forEach((v) => headers.append(key, v));
+    else if (value !== undefined) headers.set(key, value);
+  }
+  return headers;
+});
