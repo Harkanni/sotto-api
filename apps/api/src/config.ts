@@ -7,11 +7,11 @@ import { z } from 'zod';
  */
 export const DEV_AUTH_SECRET = 'sotto-local-development-secret-not-for-production';
 
-const optional = z
-  .string()
-  .trim()
-  .transform((value) => value || undefined)
-  .optional();
+/** An empty variable (`KEY=` in .env) counts as unset. */
+const blankAsUnset = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+const optional = z.preprocess(blankAsUnset, z.string().trim().optional());
 
 export const apiEnv = baseEnv
   .extend({
@@ -23,9 +23,9 @@ export const apiEnv = baseEnv
     /** The public origin people use (the web app). /api/auth/* is served on it too. */
     APP_URL: z.url().default('http://localhost:3000'),
     /** Signs session cookies and CSRF tokens; encrypts OAuth tokens. 32+ characters. */
-    AUTH_SECRET: z.string().min(32).optional(),
+    AUTH_SECRET: z.preprocess(blankAsUnset, z.string().min(32).optional()),
     /** Rate limits on /api/auth (Redis). Off by default outside production. */
-    AUTH_RATE_LIMIT: z.enum(['on', 'off']).optional(),
+    AUTH_RATE_LIMIT: z.preprocess(blankAsUnset, z.enum(['on', 'off']).optional()),
 
     /** Any SMTP server: Mailpit locally (smtp://localhost:1025), SES or another provider later. */
     SMTP_URL: optional,

@@ -77,6 +77,22 @@ jobs:
 
   node:
     runs-on: ubuntu-24.04
+    # Integration tests (apps/api/test/integration) run against a real Postgres with pgvector,
+    # the same image production uses. Each test file creates and drops its own database.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: sotto
+          POSTGRES_PASSWORD: sotto
+          POSTGRES_DB: sotto
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sotto -d sotto" --health-interval 5s --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://sotto:sotto@localhost:5432/postgres
+      REQUIRE_INTEGRATION: '1'
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6.1.0
@@ -134,8 +150,10 @@ jobs:
         run: |
           docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
           docker compose -f compose.deps.yaml exec -T postgres psql -U sotto -d sotto -c '\d leads'
+          # Production mode refuses to start without its own auth secret; a throwaway one here.
           docker run -d --name api --network $NET -p 4000:4000 \
-            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ sotto-api:ci
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 sotto-api:ci
           docker run -d --name worker --network $NET -p 4100:4100 -e RABBITMQ_URL=$MQ sotto-worker:ci
           docker run -d --name transcriber -p 5000:5000 sotto-transcriber:ci
           for i in $(seq 1 45); do

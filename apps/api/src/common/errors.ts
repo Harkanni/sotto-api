@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { ApiDefaultResponse } from '@nestjs/swagger';
 import { Prisma } from '@sotto/db';
 import { z } from 'zod';
 import type { ApiRequest } from './request.js';
@@ -35,6 +36,10 @@ export const ErrorBody = z
     }),
   })
   .meta({ id: 'Error' });
+
+/** Documents the error shape on every route of a controller (for the web's typed client). */
+export const ApiErrors = () =>
+  ApiDefaultResponse({ description: 'An error', standardSchema: ErrorBody });
 
 const STATUS_CODE: Record<number, string> = {
   400: 'INVALID_INPUT',

@@ -5,11 +5,11 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
-import { buildOpenApi, configureApp } from './bootstrap.js';
+import { APP_OPTIONS, buildOpenApi, configureApp } from './bootstrap.js';
 
 process.env.DATABASE_URL ??= 'postgresql://openapi:openapi@localhost:5432/openapi';
 
-const app = await NestFactory.create(AppModule, { logger: false });
+const app = await NestFactory.create(AppModule, { ...APP_OPTIONS, logger: false });
 configureApp(app);
 const document = buildOpenApi(app);
 const target = resolve(import.meta.dirname, '../../../openapi.json');

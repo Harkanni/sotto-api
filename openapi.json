@@ -1,6 +1,38 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/api/v1/sign-in-methods": {
+      "get": {
+        "operationId": "SignInMethodsController_methods",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethods"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Which sign-in options this server offers, for the sign-in screen.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/status": {
       "get": {
         "operationId": "StatusController_status",
@@ -60,17 +92,250 @@
           "status"
         ]
       }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "MeController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The signed-in person, their active workspace and a CSRF token.",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "operationId": "MeController_update",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMe"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change your name or which hand you use.",
+        "tags": [
+          "me"
+        ]
+      }
     }
   },
   "info": {
     "title": "Sotto API",
-    "description": "Private AI for your team’s memos and meetings.",
+    "description": "Private AI for your team’s memos and meetings. Sign-in lives at /api/auth (Better Auth); writes need the session cookie and the X-CSRF-Token from GET /api/v1/me.",
     "version": "1",
     "contact": {}
   },
   "tags": [],
   "servers": [],
   "components": {
-    "schemas": {}
+    "securitySchemes": {
+      "cookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sotto.session_token"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "SignInMethods": {
+        "type": "object",
+        "properties": {
+          "magicLink": {
+            "type": "boolean"
+          },
+          "passkey": {
+            "type": "boolean"
+          },
+          "google": {
+            "type": "boolean"
+          },
+          "microsoft": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "magicLink",
+          "passkey",
+          "google",
+          "microsoft"
+        ],
+        "additionalProperties": false
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "nullable": true,
+                "type": "string"
+              },
+              "handedness": {
+                "$ref": "#/components/schemas/Handedness"
+              }
+            },
+            "required": [
+              "id",
+              "email",
+              "name",
+              "image",
+              "handedness"
+            ],
+            "additionalProperties": false
+          },
+          "workspace": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "$ref": "#/components/schemas/Role"
+              },
+              "sample": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "sample"
+            ],
+            "additionalProperties": false
+          },
+          "csrfToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "workspace",
+          "csrfToken"
+        ],
+        "additionalProperties": false
+      },
+      "Handedness": {
+        "type": "string",
+        "enum": [
+          "right",
+          "left"
+        ]
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "admin",
+          "member",
+          "viewer"
+        ]
+      },
+      "UpdateMe": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "handedness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Handedness"
+              }
+            ]
+          }
+        }
+      }
+    }
   }
 }
