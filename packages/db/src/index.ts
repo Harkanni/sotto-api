@@ -4,16 +4,42 @@ import { PrismaClient } from './generated/prisma/client.js';
 export { PrismaClient, Prisma } from './generated/prisma/client.js';
 export type {
   AuditLog,
+  Chunk,
   Collection,
   CollectionPermission,
+  File,
   Invite,
+  MeetingInsights,
   Membership,
   Passkey,
+  PlaybackPosition,
   Session,
+  Transcript,
+  TranscriptSegment,
   User,
   Workspace,
 } from './generated/prisma/client.js';
-export { Access, Handedness, InviteStatus, Role } from './generated/prisma/enums.js';
+export {
+  Access,
+  AiRoute,
+  FileKind,
+  FileSource,
+  FileStatus,
+  Handedness,
+  InviteStatus,
+  Role,
+  Sensitivity,
+} from './generated/prisma/enums.js';
+export {
+  assertModelId,
+  ensureEmbeddingIndex,
+  hnswIndexSql,
+  indexNameFor,
+  toVectorLiteral,
+  writeEmbeddings,
+  type EmbeddingRow,
+  type RawExecutor,
+} from './vectors.js';
 export {
   CrossTenantWriteError,
   TENANT_MODELS,

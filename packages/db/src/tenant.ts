@@ -11,6 +11,16 @@ export const TENANT_MODELS = [
   'Collection',
   'CollectionPermission',
   'AuditLog',
+  'File',
+  'Transcript',
+  'TranscriptSegment',
+  'MeetingInsights',
+  'PlaybackPosition',
+  'Chunk',
+  'ChunkEmbedding',
+  'Integration',
+  'RetentionPolicy',
+  'LegalHold',
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];
