@@ -48,22 +48,21 @@ export const FilePage = z
   .object({ items: z.array(FileSchema), nextCursor: z.string().nullable() })
   .meta({ id: 'FilePage' });
 
-export const ListFilesQuery = z
-  .object({
-    /** A collection id, or "unfiled". Omit for everything you can see. */
-    collection: z.string().min(1).max(64).optional(),
-    kind: FileKindSchema.optional(),
-    status: FileStatusSchema.optional(),
-    /** Matches titles; searching inside files is Ask's job (Phase 5). */
-    q: z.string().trim().max(200).optional(),
-    /** true → the trash instead of the library. */
-    trash: z.enum(['true', 'false']).optional(),
-    pinned: z.enum(['true', 'false']).optional(),
-    sort: z.enum(['recent', 'name']).default('recent'),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-    cursor: z.string().max(500).optional(),
-  })
-  .meta({ id: 'ListFilesQuery' });
+export const ListFilesQuery = z.object({
+  /** A collection id, or "unfiled". Omit for everything you can see. */
+  collection: z.string().min(1).max(64).optional(),
+  kind: FileKindSchema.optional(),
+  status: FileStatusSchema.optional(),
+  /** Matches titles; searching inside files is Ask's job (Phase 5). */
+  q: z.string().trim().max(200).optional(),
+  /** true → the trash instead of the library. */
+  trash: z.enum(['true', 'false']).optional(),
+  pinned: z.enum(['true', 'false']).optional(),
+  sort: z.enum(['recent', 'name']).default('recent'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().max(500).optional(),
+});
+// No component id on query schemas: Swagger spreads them into parameters only when inline.
 export type ListFilesQuery = z.infer<typeof ListFilesQuery>;
 
 const Title = z
@@ -90,9 +89,7 @@ export const UpdateFile = z
   })
   .meta({ id: 'UpdateFile' });
 
-export const DownloadQuery = z
-  .object({ inline: z.enum(['true', 'false']).default('false') })
-  .meta({ id: 'DownloadQuery' });
+export const DownloadQuery = z.object({ inline: z.enum(['true', 'false']).default('false') });
 
 export const DownloadLink = z
   .object({ url: z.string(), expiresAt: z.iso.datetime() })

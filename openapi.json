@@ -1323,7 +1323,108 @@
     "/api/v1/files": {
       "get": {
         "operationId": "FilesController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "collection",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FileKind"
+                }
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FileStatus"
+                }
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "trash",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "pinned",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "recent",
+              "type": "string",
+              "enum": [
+                "recent",
+                "name"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1615,6 +1716,19 @@
               "minLength": 1,
               "maxLength": 64
             }
+          },
+          {
+            "name": "inline",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "false",
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1700,6 +1814,16 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
             }
           }
         ],
@@ -1858,6 +1982,38 @@
           }
         },
         "summary": "Remember where you stopped listening (Continue listening).",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/action-items": {
+      "get": {
+        "operationId": "MeetingsController_actionItems",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionItems"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Action items from the 20 most recent meetings you can open, newest first; yours marked.",
         "tags": [
           "meetings"
         ]
@@ -3107,66 +3263,6 @@
           "parts"
         ]
       },
-      "ListFilesQuery": {
-        "type": "object",
-        "properties": {
-          "collection": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "kind": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/FileKind"
-              }
-            ]
-          },
-          "status": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/FileStatus"
-              }
-            ]
-          },
-          "q": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "trash": {
-            "type": "string",
-            "enum": [
-              "true",
-              "false"
-            ]
-          },
-          "pinned": {
-            "type": "string",
-            "enum": [
-              "true",
-              "false"
-            ]
-          },
-          "sort": {
-            "default": "recent",
-            "type": "string",
-            "enum": [
-              "recent",
-              "name"
-            ]
-          },
-          "limit": {
-            "default": 50,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "cursor": {
-            "type": "string",
-            "maxLength": 500
-          }
-        }
-      },
       "FilePage": {
         "type": "object",
         "properties": {
@@ -3222,19 +3318,6 @@
           }
         }
       },
-      "DownloadQuery": {
-        "type": "object",
-        "properties": {
-          "inline": {
-            "default": "false",
-            "type": "string",
-            "enum": [
-              "true",
-              "false"
-            ]
-          }
-        }
-      },
       "DownloadLink": {
         "type": "object",
         "properties": {
@@ -3284,16 +3367,6 @@
           "pages"
         ],
         "additionalProperties": false
-      },
-      "TranscriptQuery": {
-        "type": "object",
-        "properties": {
-          "q": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        }
       },
       "Transcript": {
         "type": "object",
@@ -3478,6 +3551,63 @@
         "required": [
           "positionMs"
         ]
+      },
+      "ActionItems": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "owner": {
+              "nullable": true,
+              "type": "string"
+            },
+            "due": {
+              "nullable": true,
+              "type": "string"
+            },
+            "atMs": {
+              "nullable": true,
+              "type": "number"
+            },
+            "mine": {
+              "type": "boolean"
+            },
+            "meeting": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "text",
+            "owner",
+            "due",
+            "atMs",
+            "mine",
+            "meeting"
+          ],
+          "additionalProperties": false
+        }
       },
       "ContinueListening": {
         "type": "array",

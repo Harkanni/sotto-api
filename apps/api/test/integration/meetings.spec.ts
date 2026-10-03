@@ -163,6 +163,28 @@ describe.skipIf(withoutStorage)('meetings, content and sample files', () => {
     await people.tunde.get(`/api/v1/files/${board.id}/insights`).expect(404);
   });
 
+  it('gathers action items from meetings you can open, yours marked', async () => {
+    const weekly = await byTitle('Weekly product sync');
+    await db.file.update({ where: { id: weekly.id }, data: { status: 'READY' } });
+    await people.ada.patch('/api/v1/me', { name: 'Ada Okafor' }).expect(200);
+    const items = (await people.ada.get('/api/v1/action-items').expect(200)).body as {
+      text: string;
+      owner: string;
+      mine: boolean;
+      meeting: { id: string };
+    }[];
+    const weeklyItems = items.filter((i) => i.meeting.id === weekly.id);
+    expect(weeklyItems.map((i) => i.owner)).toEqual(['Tunde', 'Ada', 'Sofia']);
+    expect(weeklyItems.find((i) => i.owner === 'Ada')!.mine).toBe(true);
+    expect(weeklyItems.find((i) => i.owner === 'Tunde')!.mine).toBe(false);
+    // Tunde can't open Board: nothing from there reaches him.
+    const board = await byTitle('Board update, September');
+    const tunde = (await people.tunde.get('/api/v1/action-items').expect(200)).body as {
+      meeting: { id: string };
+    }[];
+    expect(tunde.some((i) => i.meeting.id === board.id)).toBe(false);
+  });
+
   it('says sample meetings have no audio', async () => {
     const weekly = await byTitle('Weekly product sync');
     const res = await people.priya

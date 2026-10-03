@@ -21,9 +21,7 @@ export const DocumentContent = z
   })
   .meta({ id: 'DocumentContent' });
 
-export const TranscriptQuery = z
-  .object({ q: z.string().trim().min(1).max(200).optional() })
-  .meta({ id: 'TranscriptQuery' });
+export const TranscriptQuery = z.object({ q: z.string().trim().min(1).max(200).optional() });
 
 export const TranscriptSchema = z
   .object({
@@ -86,7 +84,39 @@ export const ContinueListening = z
   .array(z.object({ file: FileSchema, positionMs: z.number(), updatedAt: z.iso.datetime() }))
   .meta({ id: 'ContinueListening' });
 
+export const ActionItemsSchema = z
+  .array(
+    z.object({
+      text: z.string(),
+      owner: z.string().nullable(),
+      due: z.string().nullable(),
+      atMs: z.number().nullable(),
+      /** The owner named in the meeting is plausibly you (your first name or email name). */
+      mine: z.boolean(),
+      meeting: z.object({ id: z.string(), title: z.string(), createdAt: z.iso.datetime() }),
+    }),
+  )
+  .meta({ id: 'ActionItems' });
+
 const asList = (value: unknown) => (Array.isArray(value) ? value : []);
+
+/** "Ada", "ada okafor", "Ada O." all match Ada Okafor <ada@…>; never a guess beyond that. */
+export function isMine(owner: string | null, me: { name: string; email: string }): boolean {
+  if (!owner) return false;
+  const said = owner
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)[0]!
+    .replace(/[^\p{L}\p{N}-]/gu, '');
+  if (!said) return false;
+  const first = me.name.trim().toLowerCase().split(/\s+/)[0] ?? '';
+  const local =
+    me.email
+      .split('@')[0]!
+      .toLowerCase()
+      .split(/[._+-]/)[0] ?? '';
+  return said === first || said === local;
+}
 
 /** Meetings and document content: transcript, notes, waveform, where you stopped, the text. */
 @ApiTags('meetings')
@@ -248,6 +278,43 @@ export class MeetingsController {
       },
       update: { positionMs: body.positionMs },
     });
+  }
+
+  @Get('action-items')
+  @RequireRole('viewer')
+  @ApiOperation({
+    summary:
+      'Action items from the 20 most recent meetings you can open, newest first; yours marked.',
+  })
+  @ApiOkResponse({ standardSchema: ActionItemsSchema })
+  async actionItems(@Ctx() auth: RequestAuth): Promise<z.infer<typeof ActionItemsSchema>> {
+    const viewer = viewerOf(auth);
+    const rows = await this.files.db(viewer.workspaceId).meetingInsights.findMany({
+      where: { file: { AND: [fileVisibleTo(viewer), { deletedAt: null, status: 'READY' }] } },
+      orderBy: { file: { createdAt: 'desc' } },
+      take: 20,
+      select: {
+        actionItems: true,
+        file: { select: { id: true, title: true, createdAt: true } },
+      },
+    });
+    return rows.flatMap((row) =>
+      (asList(row.actionItems) as Record<string, unknown>[]).map((a) => {
+        const owner = typeof a.owner === 'string' ? a.owner : null;
+        return {
+          text: String(a.text ?? ''),
+          owner,
+          due: typeof a.due === 'string' ? a.due : null,
+          atMs: typeof a.atMs === 'number' ? a.atMs : null,
+          mine: isMine(owner, auth.user),
+          meeting: {
+            id: row.file.id,
+            title: row.file.title,
+            createdAt: row.file.createdAt.toISOString(),
+          },
+        };
+      }),
+    );
   }
 
   @Get('continue-listening')

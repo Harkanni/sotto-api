@@ -124,3 +124,17 @@ describe('ids and cursors', () => {
     expect(() => decodeCursor('not-a-cursor')).toThrow(/out of date/);
   });
 });
+
+describe('whose action item', () => {
+  it('matches a first name or the email name, nothing looser', async () => {
+    const { isMine } = await import('../src/files/meetings.controller.js');
+    const me = { name: 'Ada Okafor', email: 'ada.okafor@kestrel.example' };
+    expect(isMine('Ada', me)).toBe(true);
+    expect(isMine('ada okafor', me)).toBe(true);
+    expect(isMine('Ada.', me)).toBe(true);
+    expect(isMine('Adaeze', me)).toBe(false);
+    expect(isMine(null, me)).toBe(false);
+    expect(isMine('Tunde', me)).toBe(false);
+    expect(isMine('ada', { name: '', email: 'ada@x.example' })).toBe(true);
+  });
+});
