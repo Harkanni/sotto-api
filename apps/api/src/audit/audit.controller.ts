@@ -9,24 +9,23 @@ import { PrismaService } from '../core.module.js';
 import { AUDIT_ACTIONS, AuditService } from './audit.service.js';
 import { describeEntry } from './describe.js';
 
-export const AuditQuery = z
-  .object({
-    /** Inclusive start, ISO date or date-time. */
-    from: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
-    /** Exclusive end, ISO date or date-time. */
-    to: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
-    /** A user id. */
-    actor: z.string().min(1).max(64).optional(),
-    /** A full action ("member.removed") or a group ("member"). */
-    action: z
-      .string()
-      .regex(/^[a-z_]+(\.[a-z_]+)?$/, 'Use an action like member.removed, or a group like member.')
-      .optional(),
-    /** The `nextCursor` of the previous page. */
-    cursor: z.string().min(1).max(64).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-  })
-  .meta({ id: 'AuditQuery' });
+export const AuditQuery = z.object({
+  /** Inclusive start, ISO date or date-time. */
+  from: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
+  /** Exclusive end, ISO date or date-time. */
+  to: z.iso.datetime({ offset: true }).or(z.iso.date()).optional(),
+  /** A user id. */
+  actor: z.string().min(1).max(64).optional(),
+  /** A full action ("member.removed") or a group ("member"). */
+  action: z
+    .string()
+    .regex(/^[a-z_]+(\.[a-z_]+)?$/, 'Use an action like member.removed, or a group like member.')
+    .optional(),
+  /** The `nextCursor` of the previous page. */
+  cursor: z.string().min(1).max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+// No component id: Swagger only spreads a query schema into parameters when it isn't a $ref.
 
 type AuditQuery = z.infer<typeof AuditQuery>;
 
