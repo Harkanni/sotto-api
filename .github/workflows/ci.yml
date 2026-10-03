@@ -90,8 +90,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U sotto -d sotto" --health-interval 5s --health-timeout 3s
           --health-retries 20
+      # Live status (GET /events) relays file events through Redis pub/sub.
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     env:
       TEST_DATABASE_URL: postgresql://sotto:sotto@localhost:5432/postgres
+      # Uploads go to S3-compatible storage; SeaweedFS (started below) plays S3 here.
+      TEST_S3_ENDPOINT: http://localhost:8333
       REQUIRE_INTEGRATION: '1'
     steps:
       - uses: actions/checkout@v7.0.1
@@ -104,6 +112,16 @@ jobs:
         run: |
           if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
           else echo "::warning::No pnpm-lock.yaml yet; the sync job will commit one."; pnpm install --no-frozen-lockfile; fi
+      # A service container can't take a command, so SeaweedFS starts as a step. Without an
+      # identities file its S3 gateway accepts any signature, which is all the tests need.
+      - name: Start S3 (SeaweedFS)
+        run: |
+          docker run -d --name s3 -p 8333:8333 chrislusf/seaweedfs:latest server -dir=/data -s3 -s3.port=8333
+          for i in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+            sleep 1
+          done
+          curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-test
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm format:check

@@ -56,6 +56,9 @@ importers:
       '@sotto/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sotto/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       amqplib:
         specifier: ^0.10.9
         version: 0.10.9

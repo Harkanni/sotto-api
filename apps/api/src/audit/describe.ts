@@ -35,7 +35,9 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
     case 'collection.updated':
       return `Renamed the collection ${quote(text('from'))} to ${quote(text('to'))}`;
     case 'collection.deleted':
-      return `Deleted the collection ${quote(text('name'))}`;
+      return typeof m.files === 'number' && m.files > 0
+        ? `Deleted the collection ${quote(text('name'))} and moved its ${m.files === 1 ? 'file' : `${m.files} files`} to the trash`
+        : `Deleted the collection ${quote(text('name'))}`;
     case 'collection.access_changed':
       return m.restricted
         ? `Restricted who can open ${quote(text('name'))}`
@@ -44,6 +46,24 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
       return 'Exported the audit log';
     case 'onboarding.sample_loaded':
       return 'Loaded the sample content';
+    case 'file.uploaded':
+      return `Uploaded ${quote(text('name'))}`;
+    case 'file.recorded':
+      return `Recorded ${quote(text('name'))}`;
+    case 'file.renamed':
+      return `Renamed ${quote(text('from'))} to ${quote(text('to'))}`;
+    case 'file.moved':
+      return `Moved ${quote(text('name'))} ${text('to') ? `to ${quote(text('to'))}` : 'out of its collection'}`;
+    case 'file.relabelled':
+      return `Labelled ${quote(text('name'))} ${text('to')} (was ${text('from')})`;
+    case 'file.trashed':
+      return `Moved ${quote(text('name'))} to the trash`;
+    case 'file.restored':
+      return `Restored ${quote(text('name'))} from the trash`;
+    case 'file.deleted':
+      return `Deleted ${quote(text('name'))} for good`;
+    case 'file.downloaded':
+      return `Downloaded ${quote(text('name'))}`;
     default:
       return action;
   }

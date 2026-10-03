@@ -205,7 +205,9 @@ export class CollectionsController {
   @Delete(':id')
   @RequireRole('member')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Delete a collection (needs Manage access).' })
+  @ApiOperation({
+    summary: 'Delete a collection (needs Manage access). Its files move to the trash, unfiled.',
+  })
   @ApiNoContentResponse()
   async remove(
     @Ctx() auth: RequestAuth,
@@ -218,11 +220,25 @@ export class CollectionsController {
       'MANAGE',
       'Only people who manage this collection can delete it.',
     );
-    await this.collections.db(viewer.workspaceId).collection.delete({ where: { id } });
+    // Its files go to the trash, unfiled (ADR 0016): visible only to their owners and admins, so
+    // a restricted collection's files never become visible to everyone. Restoring one puts it
+    // back unfiled; it's purged after 30 days otherwise.
+    const db = this.collections.db(viewer.workspaceId);
+    const trashed = await tenantTransaction(db, async (tx) => {
+      const now = new Date();
+      const live = await tx.file.updateMany({
+        where: { collectionId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+      await tx.file.updateMany({ where: { collectionId: id }, data: { collectionId: null } });
+      await tx.chunk.updateMany({ where: { collectionId: id }, data: { collectionId: null } });
+      await tx.collection.delete({ where: { id } });
+      return live.count;
+    });
     await this.audit.record(viewer.workspaceId, auth, {
       action: 'collection.deleted',
       target: { type: 'collection', id },
-      meta: { name: collection.name },
+      meta: { name: collection.name, ...(trashed ? { files: trashed } : {}) },
     });
   }
 
