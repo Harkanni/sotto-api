@@ -62,6 +62,8 @@ Three private repos, cloned side by side: `sotto-web` (Next.js app, design syste
 ## Conventions
 
 - ESM with `module: nodenext`: relative imports end in `.js`.
+- Transactions on tenant data use `tenantTransaction(db, fn)` from `@sotto/db`; calling
+  `$transaction` on the extended client directly makes `tsc` crawl for minutes.
 - Request bodies and queries are Zod schemas passed as `@Body({ schema })` /
   `@Query({ schema })` (Nest 12 Standard Schema validation); the same schemas feed OpenAPI.
 - Errors use `{ error: { code, message, requestId } }`; messages are written for people,

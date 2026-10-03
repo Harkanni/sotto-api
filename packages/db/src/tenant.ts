@@ -103,3 +103,19 @@ export function forWorkspace(prisma: PrismaClient, workspaceId: string) {
 }
 
 export type TenantClient = ReturnType<typeof forWorkspace>;
+
+/**
+ * Runs `fn` in one interactive transaction on a workspace-scoped client; the transaction client
+ * keeps the scope. Typed by hand because inferring `$transaction` through Prisma's extension
+ * types makes the compiler crawl for minutes.
+ */
+export function tenantTransaction<T>(
+  client: TenantClient,
+  fn: (tx: TenantClient) => Promise<T>,
+): Promise<T> {
+  const run = client.$transaction as unknown as (
+    this: TenantClient,
+    fn: (tx: TenantClient) => Promise<T>,
+  ) => Promise<T>;
+  return run.call(client, fn);
+}

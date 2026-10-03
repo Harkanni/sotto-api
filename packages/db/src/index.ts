@@ -19,6 +19,7 @@ export {
   TENANT_MODELS,
   forWorkspace,
   scopeArgs,
+  tenantTransaction,
   type TenantClient,
   type TenantModel,
 } from './tenant.js';
