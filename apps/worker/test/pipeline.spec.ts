@@ -277,6 +277,51 @@ describe.skipIf(!TEST_DATABASE_URL || !TEST_S3_ENDPOINT)('ingestion pipeline', (
     expect(statuses('rec1')).toEqual(['TRANSCRIBING', 'TRANSCRIBING', 'INDEXING', 'READY']);
   });
 
+  it('keeps the notes a sample meeting arrives with', async () => {
+    await newFile('sample1', 'AUDIO', 'audio/webm', Buffer.from(''), {
+      source: 'SAMPLE',
+      status: 'TRANSCRIBING',
+      insights: {
+        create: {
+          workspaceId: ws,
+          summary: 'Written by hand',
+          decisions: [],
+          actionItems: [],
+          openQuestions: [],
+          chapters: [],
+          model: 'sample',
+          route: 'PRIVATE',
+        },
+      },
+    });
+    const transcriptKey = storage.keys.derived(ws, 'sample1', Derived.transcript);
+    await storage.putJson(transcriptKey, {
+      engine: 'sample',
+      model: 'none',
+      language: 'en',
+      durationMs: 20_000,
+      segments: [{ startMs: 0, endMs: 18_000, text: 'Welcome to the sample.', speaker: 'Amaka' }],
+    });
+    await onTranscribeCompleted(deps, {
+      v: 1,
+      status: 'ok',
+      fileId: 'sample1',
+      workspaceId: ws,
+      transcriptKey,
+      engine: 'sample',
+      model: 'none',
+      durationMs: 20_000,
+    });
+    const file = await prisma.file.findUniqueOrThrow({
+      where: { id: 'sample1' },
+      include: { insights: true, transcript: { include: { segments: true } } },
+    });
+    expect(file.status).toBe('READY');
+    expect(file.insights!.summary).toBe('Written by hand');
+    expect(file.transcript!.segments[0]).toMatchObject({ speaker: 'Amaka', startMs: 0 });
+    expect(await prisma.chunk.count({ where: { fileId: 'sample1' } })).toBe(1);
+  });
+
   it('records a transcription failure', async () => {
     await newFile('rec2', 'AUDIO', 'audio/webm', Buffer.from('x'));
     await onFileUploaded(deps, {

@@ -1089,7 +1089,7 @@
             }
           }
         },
-        "summary": "Fill the workspace with fictional sample content (owners). Loading it twice changes nothing.",
+        "summary": "Fill the workspace with fictional sample content (owners): collections, memos and meetings. Loading it twice changes nothing; a workspace that loaded only the collections earlier gets the files.",
         "tags": [
           "onboarding"
         ]
@@ -1642,6 +1642,256 @@
         "summary": "A short-lived link to the original. `inline=true` opens it in place (the player).",
         "tags": [
           "files"
+        ]
+      }
+    },
+    "/api/v1/files/{id}/content": {
+      "get": {
+        "operationId": "MeetingsController_content",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentContent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A document’s text, page by page (once it’s Ready).",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/files/{id}/transcript": {
+      "get": {
+        "operationId": "MeetingsController_transcript",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Transcript"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A recording’s transcript; `q` marks the lines that match.",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/files/{id}/insights": {
+      "get": {
+        "operationId": "MeetingsController_insights",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingInsights"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A meeting’s notes: summary, decisions, action items, chapters.",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/files/{id}/peaks": {
+      "get": {
+        "operationId": "MeetingsController_peaks",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Peaks"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Waveform peaks for the player (0–1 per slice of the recording).",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/files/{id}/position": {
+      "put": {
+        "operationId": "MeetingsController_position",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackPosition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Remember where you stopped listening (Continue listening).",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/continue-listening": {
+      "get": {
+        "operationId": "MeetingsController_continueListening",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueListening"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Recordings you started and didn’t finish, most recent first (up to 10).",
+        "tags": [
+          "meetings"
         ]
       }
     },
@@ -3002,6 +3252,257 @@
           "expiresAt"
         ],
         "additionalProperties": false
+      },
+      "DocumentContent": {
+        "type": "object",
+        "properties": {
+          "paged": {
+            "type": "boolean"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "page",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "paged",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "TranscriptQuery": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
+      "Transcript": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "idx": {
+                  "type": "number"
+                },
+                "startMs": {
+                  "type": "number"
+                },
+                "endMs": {
+                  "type": "number"
+                },
+                "speaker": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "idx",
+                "startMs",
+                "endMs",
+                "speaker",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "matches": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "language",
+          "engine",
+          "isMock",
+          "segments",
+          "matches"
+        ],
+        "additionalProperties": false
+      },
+      "MeetingInsights": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actionItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "owner": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "due": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "atMs": {
+                  "nullable": true,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "text",
+                "owner",
+                "due",
+                "atMs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "openQuestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "startMs": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "title",
+                "startMs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "summary",
+          "decisions",
+          "actionItems",
+          "openQuestions",
+          "chapters",
+          "model",
+          "isMock",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "Peaks": {
+        "type": "object",
+        "properties": {
+          "durationMs": {
+            "type": "number"
+          },
+          "peaks": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "durationMs",
+          "peaks"
+        ],
+        "additionalProperties": false
+      },
+      "PlaybackPosition": {
+        "type": "object",
+        "properties": {
+          "positionMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400000
+          }
+        },
+        "required": [
+          "positionMs"
+        ]
+      },
+      "ContinueListening": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "$ref": "#/components/schemas/File"
+            },
+            "positionMs": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          "required": [
+            "file",
+            "positionMs",
+            "updatedAt"
+          ],
+          "additionalProperties": false
+        }
       }
     }
   }

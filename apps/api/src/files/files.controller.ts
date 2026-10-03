@@ -35,6 +35,7 @@ import {
   UpdateFile,
   type FileOut,
 } from './schemas.js';
+import { MeetingsController } from './meetings.controller.js';
 import { UploadsController, viewerOf } from './uploads.controller.js';
 
 const DOWNLOAD_SECONDS = 900;
@@ -316,6 +317,9 @@ export class FilesController {
     if (!accessAtLeast(access, 'VIEW') || file.status === 'UPLOADING') {
       throw new ApiException(409, 'NOT_READY', 'This file is still uploading.');
     }
+    if (file.source === 'SAMPLE' && file.kind === 'AUDIO') {
+      throw new ApiException(409, 'NO_AUDIO', 'Sample meetings have a transcript but no audio.');
+    }
     const inline = query.inline === 'true';
     const extension = /\.[a-z0-9]+$/.exec(file.storageKey)?.[0] ?? '';
     const url = await this.storage.presignGet(file.storageKey, {
@@ -338,7 +342,7 @@ export class FilesController {
 
 @Module({
   imports: [CollectionsModule],
-  controllers: [UploadsController, FilesController],
+  controllers: [UploadsController, FilesController, MeetingsController],
   providers: [FilesService],
   exports: [FilesService],
 })

@@ -323,6 +323,16 @@ export async function onTranscribeCompleted(deps: Deps, msg: TranscribeCompleted
 
   await index(deps, db, file, chunkTranscript(lines));
 
+  // Sample meetings arrive with their notes already written (onboarding); keep them.
+  const existing =
+    file.source === 'SAMPLE'
+      ? await db.meetingInsights.findUnique({ where: { fileId: file.id }, select: { id: true } })
+      : null;
+  if (existing) {
+    await setStatus(deps, db, file, 'READY', { durationMs: doc.durationMs });
+    return;
+  }
+
   // Notes: a private model may read any label; anything else may not read Restricted (BRIEF §3).
   const chat =
     deps.chat &&

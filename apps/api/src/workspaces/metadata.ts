@@ -10,6 +10,8 @@ const WorkspaceMeta = z.object({
     .object({
       loadedAt: z.string(),
       collections: z.record(z.string(), z.string()),
+      /** Phase 4: when the sample memos and meetings were added as real files. */
+      filesLoadedAt: z.string().optional(),
     })
     .optional(),
 });
