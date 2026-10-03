@@ -1,9 +1,9 @@
 // Sotto database schema.
-// Phase 1 holds only what's needed to prove the pipeline (Lead); each phase adds its models from
-// sotto-platform/docs/PLAN.md → Data model. Conventions:
+// Each phase adds its models from sotto-platform/docs/PLAN.md → Data model. Conventions:
 //   - snake_case table and column names via @@map / @map
-//   - every tenant-owned table has workspace_id (enforced by a client extension from Phase 3)
-//   - Postgres extensions (vector, pg_trgm, citext) are created in raw SQL migrations
+//   - every tenant-owned table has workspace_id; request code reaches those tables only through
+//     the tenant-scoped client (src/tenant.ts), which adds it to every query
+//   - Postgres extensions (vector, pg_trgm, citext) and CHECK constraints live in raw SQL migrations
 
 generator client {
   provider            = "prisma-client"
@@ -14,6 +14,258 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ── Accounts ────────────────────────────────────────────────────────────────────────────────
+// Shaped by Better Auth (apps/api/src/auth): it creates and reads these rows, and checks at
+// startup that every field it writes exists. Its organization plugin is renamed Workspace,
+// Membership and Invite, so there is one record of who belongs where. Better Auth generates the
+// ids of its rows (opaque random strings); the defaults here only cover rows made elsewhere.
+
+/// Roles inside a workspace, stored lowercase because Better Auth writes them as text.
+enum Role {
+  owner
+  admin
+  member
+  viewer
+
+  @@map("role")
+}
+
+/// Better Auth's invitation states. Expiry is a date, not a state; the API reports it.
+enum InviteStatus {
+  pending
+  accepted
+  rejected
+  canceled
+
+  @@map("invite_status")
+}
+
+/// Which side the + button sits on (Profile → Appearance).
+enum Handedness {
+  RIGHT
+  LEFT
+
+  @@map("handedness")
+}
+
+model User {
+  id            String                 @id @default(cuid(2))
+  /// Magic-link sign-ups start without a name; onboarding asks for one.
+  name          String                 @default("")
+  email         String                 @unique @db.Citext
+  emailVerified Boolean                @default(false) @map("email_verified")
+  image         String?
+  handedness    Handedness             @default(RIGHT)
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @default(now()) @updatedAt @map("updated_at")
+  sessions      Session[]
+  accounts      Account[]
+  passkeys      Passkey[]
+  memberships   Membership[]
+  invitesSent   Invite[]               @relation("InviteInviter")
+  grants        CollectionPermission[]
+  auditEntries  AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id                String     @id @default(cuid(2))
+  userId            String     @map("user_id")
+  /// The cookie value. Better Auth signs the cookie; this is what it looks up.
+  token             String     @unique
+  expiresAt         DateTime   @map("expires_at")
+  ipAddress         String?    @map("ip_address")
+  userAgent         String?    @map("user_agent")
+  /// The workspace every /api/v1 request acts in. Set by sign-in, create and activate.
+  activeWorkspaceId String?    @map("active_workspace_id")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at")
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeWorkspace   Workspace? @relation(fields: [activeWorkspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// A sign-in method linked to a user: Google, Microsoft (and, by Better Auth's design, its own
+/// "credential" provider, which Sotto doesn't enable). OAuth tokens are encrypted by Better Auth.
+model Account {
+  id                    String    @id @default(cuid(2))
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// One-time values: magic-link tokens (stored hashed) and OAuth state.
+model Verification {
+  id         String   @id @default(cuid(2))
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+model Passkey {
+  id           String    @id @default(cuid(2))
+  userId       String    @map("user_id")
+  /// What the person sees in Profile → Passkeys, e.g. "iCloud Keychain".
+  name         String?
+  publicKey    String    @map("public_key")
+  credentialID String    @unique @map("credential_id")
+  counter      Int
+  deviceType   String    @map("device_type")
+  backedUp     Boolean   @map("backed_up")
+  transports   String?
+  aaguid       String?
+  createdAt    DateTime? @default(now()) @map("created_at")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkeys")
+}
+
+/// Better Auth's "organization".
+model Workspace {
+  id          String                 @id @default(cuid(2))
+  name        String
+  /// Required by Better Auth; never used in URLs (the workspace comes from the session).
+  slug        String                 @unique
+  logo        String?
+  /// JSON text owned by the API, e.g. the sample collections loaded during onboarding.
+  metadata    String?
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at")
+  memberships Membership[]
+  invites     Invite[]
+  sessions    Session[]
+  collections Collection[]
+  grants      CollectionPermission[]
+  auditLog    AuditLog[]
+
+  @@map("workspaces")
+}
+
+/// Better Auth's "member".
+model Membership {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  role        Role      @default(member)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+/// Better Auth's "invitation". Its id is the secret in the invite link.
+model Invite {
+  id          String       @id @default(cuid(2))
+  workspaceId String       @map("workspace_id")
+  email       String       @db.Citext
+  role        Role         @default(member)
+  status      InviteStatus @default(pending)
+  expiresAt   DateTime     @map("expires_at")
+  inviterId   String       @map("inviter_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inviter     User         @relation("InviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([email])
+  @@map("invites")
+}
+
+// ── Content ─────────────────────────────────────────────────────────────────────────────────
+
+/// Access a grant gives on a collection. Owners and admins always have Manage.
+enum Access {
+  VIEW
+  EDIT
+  MANAGE
+
+  @@map("access")
+}
+
+model Collection {
+  id          String                 @id @default(cuid(2))
+  workspaceId String                 @map("workspace_id")
+  name        String
+  /// true → only people (or roles) with a grant can see and open it.
+  restricted  Boolean                @default(false)
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at")
+  workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  permissions CollectionPermission[]
+
+  @@index([workspaceId])
+  @@map("collections")
+}
+
+/// A grant on a collection to one person or to everyone with a role (exactly one of the two,
+/// enforced by a CHECK constraint in the migration).
+model CollectionPermission {
+  id           String     @id @default(cuid(2))
+  workspaceId  String     @map("workspace_id")
+  collectionId String     @map("collection_id")
+  userId       String?    @map("user_id")
+  role         Role?
+  access       Access
+  createdAt    DateTime   @default(now()) @map("created_at")
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  user         User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, userId])
+  @@unique([collectionId, role])
+  @@index([workspaceId, userId])
+  @@map("collection_permissions")
+}
+
+// ── Operations ──────────────────────────────────────────────────────────────────────────────
+
+/// Who did what, to which target, from where. Never document content, prompts or secrets.
+model AuditLog {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  actorId     String?   @map("actor_id")
+  /// e.g. "member.role_changed", "collection.created" (see apps/api/src/audit/actions.ts)
+  action      String
+  targetType  String    @map("target_type")
+  targetId    String?   @map("target_id")
+  ip          String?
+  /// Small, non-sensitive details: names, old and new roles.
+  meta        Json?
+  at          DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor       User?     @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, at(sort: Desc)])
+  @@index([workspaceId, actorId, at(sort: Desc)])
+  @@map("audit_logs")
 }
 
 /// Waitlist and demo-form sign-ups (the Phase 8 marketing site writes here; the old MongoDB
