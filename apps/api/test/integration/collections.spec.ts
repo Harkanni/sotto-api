@@ -206,7 +206,9 @@ describe.skipIf(withDatabase)('collections, access and the audit log', () => {
     const again = await people.ada.post('/api/v1/onboarding/sample-content').expect(200);
     expect(again.body).toEqual(first.body);
 
-    expect((await people.ada.get('/api/v1/me')).body.workspace.sample).toBe(true);
+    expect((await people.ada.get('/api/v1/me')).body.workspace.sample).toEqual({
+      collections: first.body.collections,
+    });
     // "Board and finance" is restricted with no grants yet: only owners and admins see it.
     expect(await names(people.priya)).toEqual([
       'Board:view',

@@ -49,7 +49,7 @@ describe.skipIf(withDatabase)('workspaces, members and invites', () => {
       id: workspaceId,
       name: 'Kestrel Labs',
       role: 'owner',
-      sample: false,
+      sample: null,
     });
     const list = await ada.get('/api/v1/workspaces').expect(200);
     expect(list.body).toEqual([

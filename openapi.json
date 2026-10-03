@@ -1132,7 +1132,20 @@
                 "$ref": "#/components/schemas/Role"
               },
               "sample": {
-                "type": "boolean"
+                "nullable": true,
+                "type": "object",
+                "properties": {
+                  "collections": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "collections"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

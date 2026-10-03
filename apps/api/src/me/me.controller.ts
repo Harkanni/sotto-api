@@ -29,8 +29,11 @@ export const Me = z
         id: z.string(),
         name: z.string(),
         role: RoleSchema,
-        /** True once fictional sample content was loaded during onboarding. */
-        sample: z.boolean(),
+        /**
+         * Set once fictional sample content was loaded during onboarding: the sample
+         * collections' keys ("product", "board"…) and their ids here. Null otherwise.
+         */
+        sample: z.object({ collections: z.record(z.string(), z.string()) }).nullable(),
       })
       .nullable(),
     /** Send as `X-CSRF-Token` on every write. Valid for this session only. */
@@ -47,6 +50,11 @@ export const UpdateMe = z
   })
   .partial()
   .meta({ id: 'UpdateMe' });
+
+function sampleOf(metadata: string | null): { collections: Record<string, string> } | null {
+  const sample = readWorkspaceMeta(metadata).sample;
+  return sample ? { collections: sample.collections } : null;
+}
 
 @ApiTags('me')
 @ApiErrors()
@@ -99,7 +107,7 @@ export class MeController {
               id: workspace.id,
               name: workspace.name,
               role: auth.workspace.role,
-              sample: Boolean(readWorkspaceMeta(workspace.metadata).sample),
+              sample: sampleOf(workspace.metadata),
             }
           : null,
       csrfToken: csrfToken(this.config.AUTH_SECRET, auth.sessionId),
