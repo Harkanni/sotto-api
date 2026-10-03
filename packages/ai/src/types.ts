@@ -33,6 +33,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   maxOutputTokens?: number;
   temperature?: number;
+  /** Ask for a single JSON object (servers that support it constrain their output). */
+  json?: boolean;
   signal?: AbortSignal;
 }
 
@@ -46,12 +48,19 @@ export interface ChatProvider extends ProviderInfo {
 }
 
 // ── Embeddings ────────────────────────────────────────────────────────
+export interface EmbedOptions {
+  /** Passages being indexed, or a question being searched (some models embed them differently). */
+  purpose?: 'document' | 'query';
+  signal?: AbortSignal;
+}
+
 export interface EmbeddingProvider extends ProviderInfo {
   readonly capability: 'embedding';
   /** The model this instance embeds with; vectors are stored per model (one index per model). */
   readonly model: string;
+  /** The vector size, or 0 until the first call reveals it. */
   readonly dimensions: number;
-  embed(texts: string[], signal?: AbortSignal): Promise<number[][]>;
+  embed(texts: string[], options?: EmbedOptions): Promise<number[][]>;
 }
 
 // ── Transcription ─────────────────────────────────────────────────────
