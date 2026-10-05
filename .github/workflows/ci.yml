@@ -301,6 +301,10 @@ jobs:
         if: always()
         run: |
           for c in api worker transcriber; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
+      # The transcriber writes the model as its own user; the cache step saves it as the runner.
+      - name: Make the model cache readable
+        if: always()
+        run: sudo chmod -R a+rX ~/whisper-models
 
   secrets:
     runs-on: ubuntu-24.04
