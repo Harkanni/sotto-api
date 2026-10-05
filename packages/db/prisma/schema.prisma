@@ -67,6 +67,8 @@ model User {
   invitesSent   Invite[]               @relation("InviteInviter")
   grants        CollectionPermission[]
   auditEntries  AuditLog[]
+  files         File[]
+  positions     PlaybackPosition[]
 
   @@map("users")
 }
@@ -147,21 +149,31 @@ model Passkey {
 
 /// Better Auth's "organization".
 model Workspace {
-  id          String                 @id @default(cuid(2))
-  name        String
+  id           String                 @id @default(cuid(2))
+  name         String
   /// Required by Better Auth; never used in URLs (the workspace comes from the session).
-  slug        String                 @unique
-  logo        String?
+  slug         String                 @unique
+  logo         String?
   /// JSON text owned by the API, e.g. the sample collections loaded during onboarding.
-  metadata    String?
-  createdAt   DateTime               @default(now()) @map("created_at")
-  updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at")
-  memberships Membership[]
-  invites     Invite[]
-  sessions    Session[]
-  collections Collection[]
-  grants      CollectionPermission[]
-  auditLog    AuditLog[]
+  metadata     String?
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
+  memberships  Membership[]
+  invites      Invite[]
+  sessions     Session[]
+  collections  Collection[]
+  grants       CollectionPermission[]
+  auditLog     AuditLog[]
+  files        File[]
+  transcripts  Transcript[]
+  segments     TranscriptSegment[]
+  insights     MeetingInsights[]
+  positions    PlaybackPosition[]
+  chunks       Chunk[]
+  embeddings   ChunkEmbedding[]
+  integrations Integration[]
+  retention    RetentionPolicy[]
+  legalHolds   LegalHold[]
 
   @@map("workspaces")
 }
@@ -220,6 +232,7 @@ model Collection {
   updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at")
   workspace   Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   permissions CollectionPermission[]
+  files       File[]
 
   @@index([workspaceId])
   @@map("collections")
@@ -243,6 +256,300 @@ model CollectionPermission {
   @@unique([collectionId, role])
   @@index([workspaceId, userId])
   @@map("collection_permissions")
+}
+
+/// What a file is. NOTE is written in Sotto (Phase 5); the other two are uploaded or recorded.
+enum FileKind {
+  DOCUMENT
+  AUDIO
+  NOTE
+
+  @@map("file_kind")
+}
+
+/// The pipeline, in order. A failure at any step lands in FAILED with `error` set; Retry starts
+/// over from UPLOADED.
+enum FileStatus {
+  UPLOADING
+  UPLOADED
+  TRANSCRIBING
+  INDEXING
+  READY
+  FAILED
+
+  @@map("file_status")
+}
+
+/// Decides which AI may read a file (BRIEF §3): Restricted only ever reaches in-cluster models.
+enum Sensitivity {
+  INTERNAL
+  CONFIDENTIAL
+  RESTRICTED
+
+  @@map("sensitivity")
+}
+
+/// How a file arrived. IMPORT is reserved for the Next integrations (Drive, Notion, Slack, Zoom).
+enum FileSource {
+  UPLOAD
+  RECORDING
+  SAMPLE
+  IMPORT
+
+  @@map("file_source")
+}
+
+/// A document or a recording. Bytes live in object storage under
+/// `files/<workspaceId>/<fileId>/`: `original` (as uploaded), plus what the pipeline derives
+/// (`pages.json`, `transcript.json`, `peaks.json`). The database holds metadata, text chunks and
+/// vectors.
+model File {
+  id            String             @id @default(cuid(2))
+  workspaceId   String             @map("workspace_id")
+  /// Unfiled when null (everyone in the workspace sees it; ADR 0016).
+  collectionId  String?            @map("collection_id")
+  /// Kept when the person leaves; null only if their account is deleted.
+  ownerId       String?            @map("owner_id")
+  kind          FileKind
+  source        FileSource         @default(UPLOAD)
+  title         String
+  status        FileStatus         @default(UPLOADING)
+  /// 0–1 within the current step (transcription reports it), for the status ring.
+  progress      Float?
+  sensitivity   Sensitivity        @default(INTERNAL)
+  storageKey    String             @unique @map("storage_key")
+  mime          String
+  sizeBytes     BigInt             @map("size_bytes")
+  /// sha256 of the original, computed by the worker (the browser shouldn't hash 500 MB).
+  checksum      String?
+  durationMs    Int?               @map("duration_ms")
+  pageCount     Int?               @map("page_count")
+  pinned        Boolean            @default(false)
+  tags          String[]           @default([])
+  /// The last failure as a code ("extract_failed", "audio_unreadable"), never content.
+  error         String?
+  /// S3 multipart upload id while UPLOADING; cleared on complete or abort.
+  uploadId      String?            @map("upload_id")
+  partSize      Int?               @map("part_size")
+  /// Next: where an imported file came from.
+  integrationId String?            @map("integration_id")
+  /// Set when trashed; purged 30 days later.
+  deletedAt     DateTime?          @map("deleted_at")
+  /// When `status` last changed (the Processing widget orders by it).
+  statusAt      DateTime           @default(now()) @map("status_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  collection    Collection?        @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  owner         User?              @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  integration   Integration?       @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  transcript    Transcript?
+  insights      MeetingInsights?
+  chunks        Chunk[]
+  positions     PlaybackPosition[]
+
+  @@index([workspaceId, deletedAt, createdAt(sort: Desc)])
+  @@index([workspaceId, collectionId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, checksum])
+  @@map("files")
+}
+
+// ── Meetings ────────────────────────────────────────────────────────────────────────────────
+
+model Transcript {
+  id          String              @id @default(cuid(2))
+  workspaceId String              @map("workspace_id")
+  fileId      String              @unique @map("file_id")
+  language    String
+  /// e.g. "faster-whisper:base"; `isMock` marks the labelled mock engine's output.
+  engine      String
+  model       String
+  isMock      Boolean             @default(false) @map("is_mock")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  file        File                @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  segments    TranscriptSegment[]
+
+  @@map("transcripts")
+}
+
+/// One line of a transcript. Search within a transcript uses a trigram index on `text`
+/// (created in the migration).
+model TranscriptSegment {
+  id           String     @id @default(cuid(2))
+  workspaceId  String     @map("workspace_id")
+  transcriptId String     @map("transcript_id")
+  idx          Int
+  speaker      String?
+  startMs      Int        @map("start_ms")
+  endMs        Int        @map("end_ms")
+  text         String
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@unique([transcriptId, idx])
+  @@index([transcriptId, startMs])
+  @@map("transcript_segments")
+}
+
+/// Where a model ran: drives the privacy rules and the data-route badge.
+enum AiRoute {
+  PRIVATE
+  BYOK
+  MANAGED
+
+  @@map("ai_route")
+}
+
+/// Generated after transcription. The JSON shapes are `MeetingInsightsBody` in
+/// packages/contracts (decisions, action items with owner and due date, questions, chapters).
+model MeetingInsights {
+  id            String    @id @default(cuid(2))
+  workspaceId   String    @map("workspace_id")
+  fileId        String    @unique @map("file_id")
+  summary       String
+  decisions     Json
+  actionItems   Json      @map("action_items")
+  openQuestions Json      @map("open_questions")
+  chapters      Json
+  model         String
+  route         AiRoute
+  isMock        Boolean   @default(false) @map("is_mock")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  file          File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_insights")
+}
+
+/// Where each person stopped listening ("Continue listening" on Home).
+model PlaybackPosition {
+  userId      String    @map("user_id")
+  fileId      String    @map("file_id")
+  workspaceId String    @map("workspace_id")
+  positionMs  Int       @map("position_ms")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  file        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, fileId])
+  @@index([workspaceId, userId, updatedAt(sort: Desc)])
+  @@map("playback_positions")
+}
+
+// ── Retrieval ───────────────────────────────────────────────────────────────────────────────
+
+/// A passage of a file: a stretch of a page, or a window of a recording. `collectionId` and
+/// `sensitivity` are copied from the file so permission and privacy filters stay inside SQL;
+/// the API rewrites them when a file moves or is relabelled. `tsv` is a generated column (raw
+/// SQL in the migration) with a GIN index for keyword search.
+model Chunk {
+  id           String                   @id @default(cuid(2))
+  workspaceId  String                   @map("workspace_id")
+  fileId       String                   @map("file_id")
+  collectionId String?                  @map("collection_id")
+  sensitivity  Sensitivity
+  idx          Int
+  text         String
+  tokenCount   Int                      @map("token_count")
+  page         Int?
+  startMs      Int?                     @map("start_ms")
+  endMs        Int?                     @map("end_ms")
+  tsv          Unsupported("tsvector")?
+  workspace    Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  file         File                     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  embeddings   ChunkEmbedding[]
+
+  @@unique([fileId, idx])
+  @@index([workspaceId, collectionId, sensitivity])
+  @@map("chunks")
+}
+
+/// One vector per chunk per embedding model, so a new model is indexed beside the old one and
+/// searches switch when it's done (PLAN → Swappable AI providers). `embedding` has no fixed
+/// dimension here; each model gets its own partial HNSW index with a cast to its size, created
+/// when its EmbeddingIndex row is (packages/db/src/vectors.ts).
+model ChunkEmbedding {
+  chunkId     String                @map("chunk_id")
+  model       String
+  workspaceId String                @map("workspace_id")
+  dims        Int
+  embedding   Unsupported("vector")
+  chunk       Chunk                 @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([chunkId, model])
+  @@index([workspaceId, model])
+  @@map("chunk_embeddings")
+}
+
+enum IndexStatus {
+  BUILDING
+  READY
+  RETIRED
+
+  @@map("index_status")
+}
+
+/// Platform-wide: which embedding models have vectors, and which one searches use.
+model EmbeddingIndex {
+  model     String      @id
+  dims      Int
+  status    IndexStatus @default(BUILDING)
+  serving   Boolean     @default(false)
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  @@map("embedding_indexes")
+}
+
+// ── Next (BRIEF §4): the tables exist so the model is settled; nothing reads or writes them ──
+
+/// A connected source of files: Google Drive, Notion, Slack, Zoom or Meet recordings.
+model Integration {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  provider    String
+  status      String    @default("disconnected")
+  /// Non-secret settings only; tokens are stored envelope-encrypted when this is built.
+  config      Json?
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  files       File[]
+
+  @@index([workspaceId])
+  @@map("integrations")
+}
+
+/// Delete files after `keepDays`, for the workspace or one collection.
+model RetentionPolicy {
+  id           String    @id @default(cuid(2))
+  workspaceId  String    @map("workspace_id")
+  collectionId String?   @map("collection_id")
+  keepDays     Int       @map("keep_days")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("retention_policies")
+}
+
+/// Files under a hold can't be deleted, by people or by retention, until it's released.
+model LegalHold {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  name        String
+  fileIds     String[]  @default([]) @map("file_ids")
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  releasedAt  DateTime? @map("released_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("legal_holds")
 }
 
 // ── Operations ──────────────────────────────────────────────────────────────────────────────

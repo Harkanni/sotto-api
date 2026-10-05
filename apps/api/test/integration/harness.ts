@@ -16,6 +16,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module.js';
 import { APP_OPTIONS, configureApp } from '../../src/bootstrap.js';
 import { DEPENDENCY_CHECKS } from '../../src/health/checks.js';
+import { QueueService } from '../../src/infra.module.js';
 import { Mailer, type MailMessage } from '../../src/mail/mailer.js';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -27,6 +28,27 @@ if (!TEST_DATABASE_URL && process.env.REQUIRE_INTEGRATION === '1') {
 
 /** Skip the suite when there is no database to run against. */
 export const withDatabase = !TEST_DATABASE_URL;
+
+/**
+ * File tests also need S3-compatible storage: TEST_S3_ENDPOINT (CI starts SeaweedFS; locally any
+ * S3 server, e.g. `pnpm deps:up`). The bucket is created if missing.
+ */
+export const TEST_S3_ENDPOINT = process.env.TEST_S3_ENDPOINT;
+if (!TEST_S3_ENDPOINT && process.env.REQUIRE_INTEGRATION === '1') {
+  throw new Error('REQUIRE_INTEGRATION=1 but TEST_S3_ENDPOINT is not set');
+}
+export const withoutStorage = !TEST_DATABASE_URL || !TEST_S3_ENDPOINT;
+
+/** Keeps every queued job instead of sending it to RabbitMQ. */
+export class CapturingQueue {
+  readonly sent: { queue: string; message: Record<string, unknown> }[] = [];
+
+  async publish(queue: string, message: Record<string, unknown>): Promise<void> {
+    this.sent.push({ queue, message });
+  }
+
+  onModuleDestroy(): void {}
+}
 
 const MIGRATIONS = new URL('../../../../packages/db/prisma/migrations/', import.meta.url);
 
@@ -87,6 +109,7 @@ export class CapturingMailer extends Mailer {
 export interface TestApp {
   app: INestApplication;
   mailer: CapturingMailer;
+  queue: CapturingQueue;
   databaseUrl: string;
   close: () => Promise<void>;
 }
@@ -100,13 +123,24 @@ export async function bootApp(): Promise<TestApp> {
     APP_URL,
     AUTH_RATE_LIMIT: 'off',
     SMTP_URL: '',
+    ...(TEST_S3_ENDPOINT
+      ? {
+          S3_ENDPOINT: TEST_S3_ENDPOINT,
+          S3_BUCKET: process.env.TEST_S3_BUCKET ?? 'sotto-test',
+          S3_ACCESS_KEY_ID: process.env.TEST_S3_ACCESS_KEY_ID ?? 'test',
+          S3_SECRET_ACCESS_KEY: process.env.TEST_S3_SECRET_ACCESS_KEY ?? 'test',
+        }
+      : {}),
   });
   const mailer = new CapturingMailer();
+  const queue = new CapturingQueue();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(Mailer)
     .useValue(mailer)
     .overrideProvider(DEPENDENCY_CHECKS)
     .useValue([])
+    .overrideProvider(QueueService)
+    .useValue(queue)
     .compile();
   const app = moduleRef.createNestApplication({ ...APP_OPTIONS, logger: false });
   configureApp(app);
@@ -114,6 +148,7 @@ export async function bootApp(): Promise<TestApp> {
   return {
     app,
     mailer,
+    queue,
     databaseUrl: database.url,
     close: async () => {
       await app.close();

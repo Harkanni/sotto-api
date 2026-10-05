@@ -22,6 +22,7 @@ COPY packages/ai/package.json packages/ai/
 COPY packages/config/package.json packages/config/
 COPY packages/contracts/package.json packages/contracts/
 COPY packages/db/package.json packages/db/
+COPY packages/storage/package.json packages/storage/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install --no-frozen-lockfile; fi
 COPY tsconfig.base.json ./

@@ -23,11 +23,20 @@ export const AUDIT_ACTIONS = [
   'collection.access_changed',
   'audit.exported',
   'onboarding.sample_loaded',
+  'file.uploaded',
+  'file.recorded',
+  'file.renamed',
+  'file.moved',
+  'file.relabelled',
+  'file.trashed',
+  'file.restored',
+  'file.deleted',
+  'file.downloaded',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export type AuditTarget = 'workspace' | 'member' | 'invite' | 'collection' | 'audit';
+export type AuditTarget = 'workspace' | 'member' | 'invite' | 'collection' | 'audit' | 'file';
 
 export interface AuditEntry {
   action: AuditAction;

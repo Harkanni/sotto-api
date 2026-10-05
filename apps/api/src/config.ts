@@ -1,4 +1,5 @@
 import { baseEnv } from '@sotto/config';
+import { storageEnv } from '@sotto/storage';
 import { z } from 'zod';
 
 /**
@@ -38,6 +39,15 @@ export const apiEnv = baseEnv
     MICROSOFT_CLIENT_SECRET: optional,
     /** "common" (any Microsoft account), "organizations", or one tenant's id. */
     MICROSOFT_TENANT_ID: z.string().default('common'),
+
+    /** Object storage (S3 / SeaweedFS): see packages/storage. */
+    ...storageEnv.shape,
+    /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
+    UPLOAD_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2 * 1024 ** 3),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && !env.AUTH_SECRET) {
