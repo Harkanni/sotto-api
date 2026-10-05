@@ -218,6 +218,90 @@ jobs:
           done
           docker logs api; docker logs worker; docker logs transcriber; exit 1
 
+  # Phase 4's "done when", for real: the built images on real Postgres (pgvector), Redis,
+  # RabbitMQ and S3, with the transcriber running faster-whisper (tiny, for CI's speed). A PDF and
+  # a 30-minute recording go in through the api like a browser sends them and must reach Ready
+  # with the right pages and timestamps. scripts/ingestion-check.ts says what is checked.
+  ingestion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build images
+        run: |
+          docker build --build-arg APP=api -t sotto-api:ci .
+          docker build --build-arg APP=worker -t sotto-worker:ci .
+          docker build -t sotto-transcriber:ci services/transcriber
+      # A 30-minute meeting that is mostly silence, with three sentences at known times: 0:03,
+      # 20:30 (past the transcriber's first 20-minute window, so window offsets are tested) and
+      # 29:30. Opus in Ogg, the way Firefox records.
+      - name: Make the 30-minute recording
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+          espeak-ng -s 130 -w /tmp/s1.wav "Good morning everyone. This is the design review for the Lagos launch."
+          espeak-ng -s 130 -w /tmp/s2.wav "Next item. The budget for the second quarter is approved."
+          espeak-ng -s 130 -w /tmp/s3.wav "Last point. We ship the recorder on Friday."
+          ffmpeg -loglevel error -y -f lavfi -t 1800 -i anullsrc=r=16000:cl=mono \
+            -i /tmp/s1.wav -i /tmp/s2.wav -i /tmp/s3.wav -filter_complex \
+            "[1]aresample=16000,adelay=3000[a];[2]aresample=16000,adelay=1230000[b];[3]aresample=16000,adelay=1770000[c];[0][a][b][c]amix=inputs=4:duration=first:normalize=0" \
+            -ac 1 -c:a libopus -b:a 32k /tmp/meeting.ogg
+          ffprobe -v error -show_entries format=duration -of csv=p=0 /tmp/meeting.ogg
+      # The tiny model (~75 MB) is downloaded once by the transcriber and cached between runs.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/whisper-models
+          key: whisper-models-tiny-v1
+      - name: Start dependencies
+        run: |
+          docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
+          for i in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+            sleep 1
+          done
+          curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
+      - name: Migrate and start the api, worker and transcriber
+        env:
+          NET: sotto-deps_default
+          DB: postgresql://sotto:sotto@postgres:5432/sotto
+          MQ: amqp://sotto:sotto@rabbitmq:5672
+        run: |
+          # Inside the network the services reach storage as s3:8333; the presigned URLs the
+          # browser (this script, on the runner) uses point at localhost:8333.
+          S3="-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci"
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
+          docker run -d --name api --network $NET -p 4000:4000 $S3 \
+            -e S3_PUBLIC_ENDPOINT=http://localhost:8333 -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 \
+            -e RABBITMQ_URL=$MQ -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off sotto-api:ci
+          # Embeddings are the labelled hash mock (no Ollama model download here); they still go
+          # through pgvector. Transcription is the real engine.
+          docker run -d --name worker --network $NET -p 4100:4100 $S3 -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
+          mkdir -p ~/whisper-models && chmod 777 ~/whisper-models
+          docker run -d --name transcriber --network $NET -p 5000:5000 $S3 -e RABBITMQ_URL=$MQ \
+            -e TRANSCRIBER_ENGINE=faster-whisper -e WHISPER_MODEL=tiny -v ~/whisper-models:/models \
+            sotto-transcriber:ci
+          for i in $(seq 1 90); do
+            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null \
+              && curl -fsS localhost:5000/readyz >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs api; docker logs worker; docker logs transcriber; exit 1
+      - name: Upload a PDF and a 30-minute recording, wait for Ready, check pages and times
+        env:
+          API_URL: http://localhost:4000
+          MAILPIT_URL: http://localhost:8025
+          MEETING_FILE: /tmp/meeting.ogg
+        run: node scripts/ingestion-check.ts
+      - name: Service logs
+        if: always()
+        run: |
+          for c in api worker transcriber; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
+
   secrets:
     runs-on: ubuntu-24.04
     steps:

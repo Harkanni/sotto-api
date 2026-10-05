@@ -73,7 +73,7 @@ The whole stack with the web app runs from `sotto-platform` (`task up`).
 
 ## CI
 
-`ci.yml` runs on every PR: lint, format, typecheck, unit + route tests, **integration tests against a real Postgres** (a fresh database per test file, built from the migrations), the Python checks, a secret scan, and a **smoke test** that builds the real images and boots them against real Postgres, Redis and RabbitMQ. `images.yml` builds arm64 images on merge to `main`, pushes them to ECR and deploys the demo (once the platform Terraform is applied).
+`ci.yml` runs on every PR: lint, format, typecheck, unit + route tests, **integration tests against a real Postgres** (a fresh database per test file, built from the migrations), the Python checks, a secret scan, and a **smoke test** that builds the real images and boots them against real Postgres, Redis and RabbitMQ, and an **ingestion** run: the same images plus S3 and faster-whisper (tiny) take a 3-page PDF and a 30-minute recording through the api to Ready and check pages and timestamps (`scripts/ingestion-check.ts`; locally `API_URL=… MAILPIT_URL=… MEETING_FILE=… node scripts/ingestion-check.ts`). `images.yml` builds arm64 images on merge to `main`, pushes them to ECR and deploys the demo (once the platform Terraform is applied).
 
 ## Accounts and workspaces
 
