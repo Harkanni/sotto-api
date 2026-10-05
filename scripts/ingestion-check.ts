@@ -251,7 +251,10 @@ async function checkMeeting(): Promise<void> {
     'transcribed by faster-whisper, not a mock',
     `${transcript.engine}, isMock ${transcript.isMock}`,
   );
-  for (const s of transcript.segments) console.log(`      ${mmss(s.startMs)}  ${s.text}`);
+  const lines = transcript.segments.map((s) => `${mmss(s.startMs)}–${mmss(s.endMs)}  ${s.text}`);
+  for (const line of lines) console.log(`      ${line}`);
+  // The transcript itself, readable on the PR when a timing check fails (logs may not be).
+  if (process.env.GITHUB_ACTIONS) console.log(`::notice title=transcript::${lines.join(' | ')}`);
   for (const { atMs, label } of SPOKEN) {
     // Whisper places a segment within a second or two of the speech; VAD trims the silence.
     const near = transcript.segments.find(
