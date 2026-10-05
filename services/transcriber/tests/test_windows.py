@@ -45,3 +45,40 @@ def test_long_audio_is_transcribed_in_windows_with_true_times(tmp_path: Path):
     assert result.language == "en"
     assert 49_900 <= result.durationMs <= 50_100
     assert progress == sorted(progress)
+
+
+def test_a_segment_across_a_long_pause_becomes_two_lines_with_true_times():
+    """What VAD does to a 30-minute meeting: one Whisper segment holding words said 9 minutes
+    apart. Each line must start when its first word was said, not where the segment began."""
+    from app.engines.faster_whisper import lines_of
+
+    def word(text, start, end):
+        return SimpleNamespace(word=text, start=start, end=end)
+
+    segment = SimpleNamespace(
+        start=34.0,  # where faster-whisper puts it: the end of the earlier speech
+        end=573.0,
+        text=" Approved. Last point, we ship on Friday.",
+        words=[
+            word(" Approved.", 33.2, 34.0),
+            word(" Last", 570.1, 570.4),
+            word(" point,", 570.4, 570.8),
+            word(" we", 571.0, 571.1),
+            word(" ship", 571.1, 571.4),
+            word(" on", 571.4, 571.5),
+            word(" Friday.", 571.5, 572.2),
+        ],
+    )
+    lines = lines_of(segment, offset_ms=1_200_000)
+    assert [(line.startMs, line.endMs, line.text) for line in lines] == [
+        (1_233_200, 1_234_000, "Approved."),
+        (1_770_100, 1_772_200, "Last point, we ship on Friday."),
+    ]
+
+
+def test_without_word_times_a_segment_is_one_line():
+    from app.engines.faster_whisper import lines_of
+
+    segment = SimpleNamespace(start=1.0, end=2.0, text="  hello  ", words=None)
+    assert [(s.startMs, s.text) for s in lines_of(segment, 0)] == [(1000, "hello")]
+    assert lines_of(SimpleNamespace(start=0, end=1, text="  ", words=[]), 0) == []

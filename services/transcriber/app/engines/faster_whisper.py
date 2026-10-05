@@ -66,19 +66,16 @@ class FasterWhisperEngine:
                     # Skips silence (long pauses, hold music) so it isn't transcribed as noise.
                     vad_filter=True,
                     condition_on_previous_text=False,  # fewer runaway repetitions
+                    # VAD joins the speech and cuts the silence out before Whisper hears it, so
+                    # one Whisper segment can straddle a long pause. Its own start then lands
+                    # at the end of the earlier speech. Word times are mapped back one by one,
+                    # so lines are rebuilt from words and split wherever a pause falls.
+                    word_timestamps=True,
                 )
                 detected = detected or info.language
                 # `segments` is a generator: transcription happens as it's read.
                 for segment in segments:
-                    text = segment.text.strip()
-                    if text:
-                        out.append(
-                            Segment(
-                                startMs=offset_ms + max(0, round(segment.start * 1000)),
-                                endMs=offset_ms + max(0, round(segment.end * 1000)),
-                                text=text,
-                            )
-                        )
+                    out.extend(lines_of(segment, offset_ms))
                     if on_progress and duration_ms:
                         done = offset_ms + segment.end * 1000
                         on_progress(min(1.0, done / duration_ms))
@@ -90,3 +87,41 @@ class FasterWhisperEngine:
             isMock=False,
             segments=out,
         )
+
+
+# A silence this long between two words starts a new line: a transcript line is something said
+# without stopping, and its time is when it began.
+PAUSE_MS = 1500
+
+
+def lines_of(segment, offset_ms: int) -> list[Segment]:
+    """One Whisper segment as transcript lines with true times (see `word_timestamps` above).
+
+    Without word times (an engine or test that gives none), the segment is one line as it is.
+    """
+    words = [w for w in (getattr(segment, "words", None) or []) if w.word.strip()]
+    if not words:
+        text = segment.text.strip()
+        if not text:
+            return []
+        return [
+            Segment(
+                startMs=offset_ms + max(0, round(segment.start * 1000)),
+                endMs=offset_ms + max(0, round(segment.end * 1000)),
+                text=text,
+            )
+        ]
+    groups: list[list] = [[words[0]]]
+    for prev, word in zip(words, words[1:], strict=False):
+        if (word.start - prev.end) * 1000 > PAUSE_MS:
+            groups.append([])
+        groups[-1].append(word)
+    return [
+        Segment(
+            startMs=offset_ms + max(0, round(group[0].start * 1000)),
+            endMs=offset_ms + max(0, round(group[-1].end * 1000)),
+            # Whisper's words carry their own leading spaces.
+            text="".join(w.word for w in group).strip(),
+        )
+        for group in groups
+    ]
