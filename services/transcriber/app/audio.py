@@ -93,8 +93,8 @@ def normalize(source: Path, target: Path) -> int:
 
 
 def peaks(wav: Path, duration_ms: int, buckets: int | None = None) -> list[float]:
-    """Loudness per bucket for the player's waveform: the peak of each slice, scaled so the
-    loudest slice is 1, with a square-root curve so quiet speech still shows."""
+    """Loudness per bucket for the player's waveform: the peak of each slice, scaled so a loud
+    slice is 1, with a square-root curve so quiet speech still shows."""
     count = buckets or max(1, min(MAX_PEAKS, duration_ms // 500))  # about two per second
     total = (wav.stat().st_size - 44) // 2
     if total <= 0:
@@ -112,5 +112,8 @@ def peaks(wav: Path, duration_ms: int, buckets: int | None = None) -> list[float
             chunk.frombytes(raw[: len(raw) - len(raw) % 2])
             values.append(max((abs(s) for s in chunk), default=0))
     values += [0] * (count - len(values))
-    loudest = max(values) or 1
-    return [round(math.sqrt(v / loudest), 3) for v in values]
+    # Scaled to the 95th percentile, not the single loudest slice: one click, cough or door
+    # slam would otherwise flatten the whole waveform. Slices above it are capped at 1.
+    ranked = sorted(values)
+    loud = ranked[int(0.95 * (len(ranked) - 1))] or ranked[-1] or 1
+    return [round(min(1.0, math.sqrt(v / loud)), 3) for v in values]
