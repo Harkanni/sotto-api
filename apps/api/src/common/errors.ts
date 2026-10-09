@@ -9,6 +9,7 @@ import {
 import { HttpAdapterHost } from '@nestjs/core';
 import { ApiDefaultResponse } from '@nestjs/swagger';
 import { Prisma } from '@sotto/db';
+import { isStorageError } from '@sotto/storage';
 import { z } from 'zod';
 import type { ApiRequest } from './request.js';
 
@@ -145,6 +146,15 @@ export function describeError(exception: unknown): ErrorPayload {
       return { status: 404, code: 'NOT_FOUND', message: STATUS_MESSAGE[404]! };
     if (exception.code === 'P2002')
       return { status: 409, code: 'CONFLICT', message: STATUS_MESSAGE[409]! };
+  }
+  // Storage down, unreachable or refusing our credentials: say so, so nobody retries in vain
+  // thinking their file is the problem. The log line carries the SDK's error class.
+  if (isStorageError(exception)) {
+    return {
+      status: 503,
+      code: 'STORAGE_UNAVAILABLE',
+      message: 'Sotto can’t reach file storage right now. Try again in a few minutes.',
+    };
   }
   return { status: 500, code: 'INTERNAL', message: 'Something went wrong on our side. Try again.' };
 }

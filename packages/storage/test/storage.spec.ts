@@ -7,6 +7,7 @@ import {
   Storage,
   StorageKeys,
   extensionOf,
+  isStorageError,
   partCountFor,
   partSizeFor,
   storageEnv,
@@ -50,6 +51,67 @@ describe('multipart sizing', () => {
       expect(part).toBeGreaterThanOrEqual(S3_MIN_PART);
       expect(partCountFor(size, part)).toBeLessThanOrEqual(1_000);
       expect(partCountFor(size, part)).toBeLessThan(S3_MAX_PARTS);
+    }
+  });
+});
+
+describe('storage errors', () => {
+  it('recognises failures talking to storage, not missing objects or app errors', () => {
+    const noCredentials = Object.assign(
+      new Error('Could not load credentials from any providers'),
+      {
+        name: 'CredentialsProviderError',
+      },
+    );
+    const answered = Object.assign(new Error('Access Denied'), {
+      name: 'AccessDenied',
+      $metadata: { httpStatusCode: 403 },
+    });
+    expect(isStorageError(noCredentials)).toBe(true);
+    expect(isStorageError(answered)).toBe(true);
+    expect(isStorageError(new ObjectMissingError('files/w/f/original.pdf'))).toBe(false);
+    expect(isStorageError(new Error('boom'))).toBe(false);
+    expect(isStorageError('nope')).toBe(false);
+  });
+
+  it('reports an unreachable server as a storage error', async () => {
+    const storage = new Storage(
+      storageEnv.parse({
+        S3_ENDPOINT: 'http://127.0.0.1:9', // nothing listens on the discard port
+        S3_ACCESS_KEY_ID: 'test',
+        S3_SECRET_ACCESS_KEY: 'test',
+      }),
+    );
+    const error = await storage.ping().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isStorageError(error)).toBe(true);
+  });
+
+  it('reports missing credentials as a storage error (the demo’s Phase 4 bug, ADR 0018)', async () => {
+    const saved = { ...process.env };
+    // No keys anywhere and no instance metadata: what a container on the demo server saw.
+    for (const name of [
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_SESSION_TOKEN',
+      'AWS_PROFILE',
+    ])
+      delete process.env[name];
+    process.env.AWS_EC2_METADATA_DISABLED = 'true';
+    process.env.AWS_SHARED_CREDENTIALS_FILE = '/nonexistent/credentials';
+    process.env.AWS_CONFIG_FILE = '/nonexistent/config';
+    try {
+      const storage = new Storage(storageEnv.parse({}));
+      const error = await storage.ping().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(isStorageError(error)).toBe(true);
+    } finally {
+      for (const name of Object.keys(process.env)) if (!(name in saved)) delete process.env[name];
+      Object.assign(process.env, saved);
     }
   });
 });

@@ -3,6 +3,7 @@ import amqp from 'amqplib';
 import { Redis } from 'ioredis';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { PrismaService } from '../core.module.js';
+import { StorageService } from '../infra.module.js';
 
 /** A dependency the api needs before it should receive traffic. */
 export interface DependencyCheck {
@@ -45,6 +46,21 @@ export class RedisCheck implements DependencyCheck, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     this.redis.disconnect();
+  }
+}
+
+/**
+ * Uploads, reading and playback all need storage, and so does signing their URLs: no credentials
+ * means no upload. Checking it here makes a deploy that can't reach the bucket fail instead of
+ * going green (the demo once shipped with containers that had no AWS credentials; ADR 0018).
+ */
+@Injectable()
+export class StorageCheck implements DependencyCheck {
+  readonly name = 'storage';
+  constructor(@Inject(StorageService) private readonly storage: StorageService) {}
+
+  async check(signal: AbortSignal): Promise<void> {
+    await this.storage.ping(signal);
   }
 }
 
