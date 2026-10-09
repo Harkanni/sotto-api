@@ -329,6 +329,12 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: 24
+      # The Ollama image (CUDA libraries) and the S3 store's volumes need more room than the
+      # runner leaves free: drop toolchains this job never uses (~20 GB).
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
       - uses: docker/setup-buildx-action@v4.4.1
       - name: Build images
         run: |
@@ -381,7 +387,13 @@ jobs:
         env:
           API_URL: http://localhost:4000
           MAILPIT_URL: http://localhost:8025
-        run: node scripts/eval.ts
+        run: |
+          # On failure, the services' last lines become annotations (the PR shows them).
+          node scripts/eval.ts && exit 0
+          df -h / | tail -1 | sed 's/^/::error title=disk::/'
+          for c in api worker; do docker logs $c 2>&1 | grep -i -E 'error|warn' | tail -8 | sed "s/^/::error title=$c::/"; done
+          docker compose -f compose.deps.yaml logs s3 2>&1 | tail -8 | sed 's/^/::error title=s3::/'
+          exit 1
       - name: Service logs
         if: always()
         run: |
