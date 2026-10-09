@@ -99,7 +99,8 @@ function previewOf(answer: string): string | null {
   // Plain words only: no citation markers, headings, bullets or bold.
   const text = answer
     .replace(/\s*\[\d+\]/g, '')
-    .replace(/^\s*(#{1,6}|[-*•]|\d+[.)])\s+/gm, '')
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, '')
     .replace(/\*\*/g, '')
     .replace(/\s+/g, ' ')
     .trim();

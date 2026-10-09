@@ -37,6 +37,10 @@ describe('search snippets', () => {
     );
     expect(s.text).toBe('Risks Unreliable connectivity on field visits.');
     expect(marked(s)).toEqual(['connectivity']);
+    // As chunks store it: line breaks flattened.
+    expect(snippetOf('health. ## Risks 1. Unreliable', 'risks').text).toBe(
+      'health. Risks 1. Unreliable',
+    );
   });
 
   it('starts at the beginning when nothing matches (a match by meaning)', () => {

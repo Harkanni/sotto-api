@@ -31,7 +31,9 @@ export function highlightsIn(text: string, question: string): [number, number][]
 export function snippetOf(text: string, question: string, max = 220): Snippet {
   // Snippets are plain text: Markdown headings, bullets and bold markers go.
   const clean = text
-    .replace(/^\s*(#{1,6}|[-*•]|\d+[.)])\s+/gm, '')
+    // Chunks have their line breaks flattened, so markers are found anywhere, not at line starts.
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, '')
     .replace(/\*\*/g, '')
     .replace(/\s+/g, ' ')
     .trim();
