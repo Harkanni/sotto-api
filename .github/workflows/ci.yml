@@ -345,8 +345,10 @@ jobs:
           # Problems are written as annotations, so they show on the PR without the log.
           fail() { echo "::error title=evals setup::$1"; docker compose -f compose.deps.yaml logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'; exit 1; }
           # The ollama service from compose.deps.yaml (profile "ai"), on the same network.
-          docker compose -f compose.deps.yaml --profile ai up -d ollama 2>/tmp/ollama-up.err \
-            || fail "ollama did not start: $(grep -i error /tmp/ollama-up.err | tail -3 | tr '\n' ' ')"
+          # The Ollama image is large (CUDA libraries): make room after the image builds.
+          docker builder prune -af >/dev/null; df -h / | tail -1
+          docker compose -f compose.deps.yaml --profile ai up -d ollama >/tmp/ollama-up.log 2>&1 \
+            || fail "ollama did not start: $(tail -c 400 /tmp/ollama-up.log | tr '\n\r' '  ')"
           for i in $(seq 1 60); do curl -fsS localhost:11434/api/version >/dev/null && break; sleep 1; done
           curl -fsS localhost:11434/api/version || fail "ollama is not answering on 11434"
           # ~275 MB, pulled over Ollama's HTTP API (the last line of its progress says success).
