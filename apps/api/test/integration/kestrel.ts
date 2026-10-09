@@ -16,7 +16,11 @@ import {
 import { AiService } from '../../src/ask/ai.service.js';
 import { Person, bootApp, type TestApp } from './harness.js';
 
-/** Four meanings plus "none of these": a word maps to its meaning, a text to their sum. */
+/**
+ * Four meanings: a word maps to its meaning, a text to the normalised sum of its words. A text
+ * with none of them gets one of 64 other directions by hash, so unrelated texts are unrelated to
+ * each other too (as with a real model), not all identical.
+ */
 const MEANINGS: Record<string, number> = {
   ...Object.fromEntries(
     'money cash runway burn revenue budget funds months'.split(' ').map((w) => [w, 0]),
@@ -27,7 +31,7 @@ const MEANINGS: Record<string, number> = {
 };
 
 export const CONCEPT_MODEL = 'test:concepts';
-export const CONCEPT_DIMS = 5;
+export const CONCEPT_DIMS = 4 + 64;
 
 export function embedConcepts(text: string): number[] {
   const v = new Array<number>(CONCEPT_DIMS).fill(0);
@@ -36,7 +40,12 @@ export function embedConcepts(text: string): number[] {
     if (i !== undefined) v[i]! += 1;
   }
   const norm = Math.hypot(...v);
-  return norm ? v.map((x) => x / norm) : [0, 0, 0, 0, 1];
+  if (norm) return v.map((x) => x / norm);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++)
+    hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  v[4 + (hash % 64)] = 1;
+  return v;
 }
 
 export const conceptEmbedder: EmbeddingProvider = {

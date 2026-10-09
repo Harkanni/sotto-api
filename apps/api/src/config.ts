@@ -45,6 +45,8 @@ export const apiEnv = baseEnv
     ...storageEnv.shape,
     /** Embeddings for searching, and the model that answers in Ask: see packages/ai. */
     ...aiEnv.shape,
+    /** Questions one person may ask per minute (each may call a model). */
+    ASK_RATE_PER_MINUTE: z.coerce.number().int().positive().default(20),
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()
