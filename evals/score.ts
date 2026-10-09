@@ -56,10 +56,12 @@ export interface Thresholds {
 }
 
 export const THRESHOLDS: Record<'hybrid' | 'keyword', Thresholds> = {
-  // Real embeddings: paraphrases must be found, and unrelated questions must find nothing.
-  hybrid: { recallAt5: 0.9, mrr: 0.7, place: 0.85, unanswerable: 0.66, cited: 0.8, words: 0.7 },
-  // Keywords only (mock embeddings). Measured on 9 Oct 2026: recall@5 100%, MRR 0.66, moments
-  // 88%, 3/3 declined; the floor sits just under that so a regression in the keyword half fails.
+  // Real embeddings (nomic-embed-text in CI): paraphrases must be found, and unrelated
+  // questions must find nothing. Measured on 9 Oct 2026: recall@5 100%, MRR 0.92, moments 100%,
+  // 3/3 declined, 96% cited; the gates sit just under that. `words` applies only with a model.
+  hybrid: { recallAt5: 0.95, mrr: 0.85, place: 0.9, unanswerable: 1, cited: 0.9, words: 0.7 },
+  // Keywords only (mock embeddings). Measured on 9 Oct 2026: recall@5 100%, MRR 0.63–0.65,
+  // moments 88%, 3/3 declined; the gates sit just under that so a keyword regression fails.
   keyword: { recallAt5: 0.9, mrr: 0.55, place: 0.8, unanswerable: 1, cited: 0.9, words: 0.5 },
 };
 
