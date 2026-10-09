@@ -11,6 +11,7 @@ export {
 export {
   AiConfigError,
   aiEnv,
+  askChatFrom,
   embeddingProviderFrom,
   privateChatFrom,
   type AiSettings,

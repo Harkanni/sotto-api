@@ -19,10 +19,13 @@ const optional = z.preprocess(blankAsUnset, z.string().trim().optional());
  *   AI_EMBEDDINGS=openai-compatible:bge-m3       any OpenAI-style server (TEI, vLLM…)
  *   AI_EMBEDDINGS=fake:fake-hash                 labelled mock, for tests and tiny servers
  *   AI_PRIVATE_CHAT=ollama:llama3.2:3b           meeting notes; unset → labelled basic notes
+ *   AI_ASK_CHAT=openai-compatible:some-model     answers in Ask; unset → AI_PRIVATE_CHAT;
+ *                                                neither → passages only, labelled
  */
 export const aiEnv = z.object({
   AI_EMBEDDINGS: z.string().default('ollama:nomic-embed-text'),
   AI_PRIVATE_CHAT: optional,
+  AI_ASK_CHAT: optional,
   OLLAMA_URL: z.string().default('http://localhost:11434'),
   AI_OPENAI_COMPATIBLE_URL: optional,
   AI_OPENAI_COMPATIBLE_KEY: optional,
@@ -69,13 +72,28 @@ export function embeddingProviderFrom(settings: AiSettings): EmbeddingProvider {
   return new OpenAICompatibleEmbeddingProvider(provider, model, endpoint(provider, settings));
 }
 
+function chatFrom(ref: string, settings: AiSettings): { provider: ChatProvider; model: string } {
+  const { provider, model } = parseModelRef(ref);
+  if (provider === 'fake') return { provider: new FakeChatProvider(), model };
+  const chat = new OpenAICompatibleChatProvider(provider, endpoint(provider, settings));
+  return { provider: chat, model };
+}
+
 /** The private chat model for meeting notes, or null when none is configured. */
 export function privateChatFrom(
   settings: AiSettings,
 ): { provider: ChatProvider; model: string } | null {
-  if (!settings.AI_PRIVATE_CHAT) return null;
-  const { provider, model } = parseModelRef(settings.AI_PRIVATE_CHAT);
-  if (provider === 'fake') return { provider: new FakeChatProvider(), model };
-  const chat = new OpenAICompatibleChatProvider(provider, endpoint(provider, settings));
-  return { provider: chat, model };
+  return settings.AI_PRIVATE_CHAT ? chatFrom(settings.AI_PRIVATE_CHAT, settings) : null;
+}
+
+/**
+ * The model that answers questions in Ask: AI_ASK_CHAT, else the private model, else null (Ask
+ * then answers with the matching passages only, labelled). Workspace choices (Private, BYOK,
+ * Managed) replace this platform default in Phase 6.
+ */
+export function askChatFrom(
+  settings: AiSettings,
+): { provider: ChatProvider; model: string } | null {
+  const ref = settings.AI_ASK_CHAT ?? settings.AI_PRIVATE_CHAT;
+  return ref ? chatFrom(ref, settings) : null;
 }

@@ -21,6 +21,10 @@ export const TENANT_MODELS = [
   'Integration',
   'RetentionPolicy',
   'LegalHold',
+  'Conversation',
+  'Message',
+  'Citation',
+  'Note',
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];

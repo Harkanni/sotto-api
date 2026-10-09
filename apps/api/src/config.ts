@@ -1,3 +1,4 @@
+import { aiEnv } from '@sotto/ai';
 import { baseEnv } from '@sotto/config';
 import { storageEnv } from '@sotto/storage';
 import { z } from 'zod';
@@ -42,6 +43,8 @@ export const apiEnv = baseEnv
 
     /** Object storage (S3 / SeaweedFS): see packages/storage. */
     ...storageEnv.shape,
+    /** Embeddings for searching, and the model that answers in Ask: see packages/ai. */
+    ...aiEnv.shape,
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()
