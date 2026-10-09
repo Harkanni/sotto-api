@@ -300,6 +300,8 @@ enum FileSource {
   RECORDING
   SAMPLE
   IMPORT
+  /// Written in Sotto: a new note, or an answer saved as a note (Phase 5).
+  WRITTEN
 
   @@map("file_source")
 }

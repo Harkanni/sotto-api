@@ -2140,6 +2140,207 @@
           "events"
         ]
       }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "SearchController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "collection",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "documents",
+                "meetings"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search files, passages and meeting moments (hybrid, ranked).",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/notes": {
+      "post": {
+        "operationId": "NotesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNote"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Write a note. It is indexed like a document and can be cited.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/v1/notes/{id}": {
+      "get": {
+        "operationId": "NotesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A note’s text as written (Markdown), for reading and editing.",
+        "tags": [
+          "notes"
+        ]
+      },
+      "patch": {
+        "operationId": "NotesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNote"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Edit a note’s title or text. The text is indexed again.",
+        "tags": [
+          "notes"
+        ]
+      }
     }
   },
   "info": {
@@ -2833,7 +3034,10 @@
               "file.trashed",
               "file.restored",
               "file.deleted",
-              "file.downloaded"
+              "file.downloaded",
+              "note.created",
+              "note.edited",
+              "ask.asked"
             ]
           },
           "summary": {
@@ -3172,7 +3376,8 @@
           "upload",
           "recording",
           "sample",
-          "import"
+          "import",
+          "written"
         ]
       },
       "FileStatus": {
@@ -3636,6 +3841,242 @@
             "updatedAt"
           ],
           "additionalProperties": false
+        }
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "keyword"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "$ref": "#/components/schemas/File"
+                },
+                "match": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "content"
+                  ]
+                }
+              },
+              "required": [
+                "file",
+                "match"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "passages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chunkId": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "document",
+                        "audio",
+                        "note"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "page": {
+                  "nullable": true,
+                  "type": "number"
+                },
+                "snippet": {
+                  "$ref": "#/components/schemas/Snippet"
+                }
+              },
+              "required": [
+                "chunkId",
+                "file",
+                "page",
+                "snippet"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "moments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chunkId": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "document",
+                        "audio",
+                        "note"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "startMs": {
+                  "type": "number"
+                },
+                "endMs": {
+                  "type": "number"
+                },
+                "snippet": {
+                  "$ref": "#/components/schemas/Snippet"
+                }
+              },
+              "required": [
+                "chunkId",
+                "file",
+                "startMs",
+                "endMs",
+                "snippet"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "mode",
+          "files",
+          "passages",
+          "moments"
+        ],
+        "additionalProperties": false
+      },
+      "Snippet": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "required": [
+          "text",
+          "highlights"
+        ],
+        "additionalProperties": false
+      },
+      "CreateNote": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "collectionId": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "sensitivity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Sensitivity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "Note": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateNote": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          }
         }
       }
     }

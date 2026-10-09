@@ -156,6 +156,64 @@ describe.skipIf(!TEST_DATABASE_URL || !TEST_S3_ENDPOINT)('ingestion pipeline', (
     expect(await prisma.chunk.count({ where: { fileId: 'pdf1' } })).toBe(3);
   });
 
+  it('indexes a note, and lets the newer job finish one edited mid-indexing', async () => {
+    const key = storage.keys.original(ws, 'note1', 'note.md');
+    await storage.putBytes(
+      key,
+      Buffer.from('# Launch risks\nConnectivity on field visits.'),
+      'text/markdown',
+    );
+    await prisma.file.create({
+      data: {
+        id: 'note1',
+        workspaceId: ws,
+        kind: 'NOTE',
+        source: 'WRITTEN',
+        title: 'Launch risks',
+        status: 'UPLOADED',
+        storageKey: key,
+        mime: 'text/markdown',
+        sizeBytes: 40n,
+      },
+    });
+    const job = {
+      v: 1 as const,
+      fileId: 'note1',
+      workspaceId: ws,
+      kind: 'NOTE' as const,
+      storageKey: key,
+      mime: 'text/markdown',
+    };
+    // The person saves an edit while this job is embedding: the api puts the new text in
+    // storage, sets the file back to UPLOADED and queues another job.
+    const editing: Deps = {
+      ...deps,
+      embeddings: {
+        ...deps.embeddings,
+        embed: async (texts, options) => {
+          await storage.putBytes(
+            key,
+            Buffer.from('# Launch risks\nPricing in naira.'),
+            'text/markdown',
+          );
+          await prisma.file.update({ where: { id: 'note1' }, data: { status: 'UPLOADED' } });
+          return deps.embeddings.embed(texts, options);
+        },
+      },
+    };
+    await onFileUploaded(editing, job);
+    expect((await prisma.file.findUniqueOrThrow({ where: { id: 'note1' } })).status).toBe(
+      'UPLOADED',
+    );
+
+    await onFileUploaded(deps, job);
+    const file = await prisma.file.findUniqueOrThrow({ where: { id: 'note1' } });
+    expect(file).toMatchObject({ status: 'READY', pageCount: null });
+    const chunks = await prisma.chunk.findMany({ where: { fileId: 'note1' } });
+    expect(chunks.map((c) => c.text).join(' ')).toContain('Pricing in naira.');
+    expect(chunks.map((c) => c.text).join(' ')).not.toContain('Connectivity');
+  });
+
   it('fails unreadable documents for good, with a code', async () => {
     await newFile('bad1', 'DOCUMENT', 'application/pdf', Buffer.from('not a pdf'));
     const error = await onFileUploaded(deps, {

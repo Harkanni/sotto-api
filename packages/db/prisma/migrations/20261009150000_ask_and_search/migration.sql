@@ -2,6 +2,9 @@
 -- Prisma's diff, with what Prisma can't express added by hand at the end: trigram indexes for
 -- searching chat history and file titles, and CHECK constraints.
 
+-- AlterEnum: notes are written in Sotto.
+ALTER TYPE "file_source" ADD VALUE 'WRITTEN';
+
 -- CreateEnum
 CREATE TYPE "message_role" AS ENUM ('USER', 'ASSISTANT');
 

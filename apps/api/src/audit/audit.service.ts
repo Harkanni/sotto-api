@@ -6,7 +6,7 @@ import { PrismaService } from '../core.module.js';
 /**
  * Everything the audit log records (brief §4: settings changes, members, exports, deletes;
  * uploads, views and questions join in Phases 4–5). The meta of each entry holds names and
- * roles only, never content.
+ * roles only, never content: a question is recorded as asked, never what it said.
  */
 export const AUDIT_ACTIONS = [
   'workspace.created',
@@ -32,11 +32,15 @@ export const AUDIT_ACTIONS = [
   'file.restored',
   'file.deleted',
   'file.downloaded',
+  'note.created',
+  'note.edited',
+  'ask.asked',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export type AuditTarget = 'workspace' | 'member' | 'invite' | 'collection' | 'audit' | 'file';
+export type AuditTarget =
+  'workspace' | 'member' | 'invite' | 'collection' | 'audit' | 'file' | 'conversation';
 
 export interface AuditEntry {
   action: AuditAction;
