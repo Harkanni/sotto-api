@@ -334,11 +334,6 @@ jobs:
         run: |
           docker build --build-arg APP=api -t sotto-api:ci .
           docker build --build-arg APP=worker -t sotto-worker:ci .
-      # The embedding model (~275 MB) is pulled once and cached between runs.
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/ollama
-          key: ollama-nomic-embed-text-v1
       - name: Start dependencies and the embedding model
         run: |
           docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
@@ -348,14 +343,13 @@ jobs:
           done
           curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
           # Problems are written as annotations, so they show on the PR without the log.
-          fail() { echo "::error title=evals setup::$1"; docker logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'; exit 1; }
-          mkdir -p "$HOME/ollama"
-          docker run -d --name ollama --network sotto-deps_default -p 11434:11434 \
-            -v "$HOME/ollama:/root/.ollama" ollama/ollama:latest 2>/tmp/ollama-run.err \
-            || fail "ollama did not start: $(tail -c 300 /tmp/ollama-run.err)"
+          fail() { echo "::error title=evals setup::$1"; docker compose -f compose.deps.yaml logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'; exit 1; }
+          # The ollama service from compose.deps.yaml (profile "ai"), on the same network.
+          docker compose -f compose.deps.yaml --profile ai up -d ollama 2>/tmp/ollama-up.err \
+            || fail "ollama did not start: $(grep -i error /tmp/ollama-up.err | tail -3 | tr '\n' ' ')"
           for i in $(seq 1 60); do curl -fsS localhost:11434/api/version >/dev/null && break; sleep 1; done
           curl -fsS localhost:11434/api/version || fail "ollama is not answering on 11434"
-          # Pulled over Ollama's HTTP API (streams progress; the last line says success).
+          # ~275 MB, pulled over Ollama's HTTP API (the last line of its progress says success).
           curl -fsS localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' | tail -1 \
             || fail "could not pull nomic-embed-text"
           curl -fsS localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' \
@@ -389,11 +383,7 @@ jobs:
       - name: Service logs
         if: always()
         run: |
-          for c in api worker ollama; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
-      # Ollama writes the model as root; the cache step saves it as the runner.
-      - name: Make the model cache readable
-        if: always()
-        run: sudo chmod -R a+rX ~/ollama
+          for c in api worker; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
 
   secrets:
     runs-on: ubuntu-24.04
