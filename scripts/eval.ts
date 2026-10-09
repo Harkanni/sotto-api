@@ -199,6 +199,13 @@ async function main(): Promise<void> {
   const summary = markdown(report);
   console.log(`\n${summary}`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+  // The numbers as one annotation too, readable from the PR without opening the job.
+  if (process.env.GITHUB_ACTIONS) {
+    const pc = (n: number | null) => (n === null ? '–' : `${Math.round(n * 100)}%`);
+    console.log(
+      `::notice title=evals (${report.mode})::recall@1/3/5 ${pc(report.recallAt1)} ${pc(report.recallAt3)} ${pc(report.recallAt5)} · MRR ${report.mrr.toFixed(2)} · moments ${pc(report.place)} · unanswerable ${report.unanswerable.declined}/${report.unanswerable.asked} · cited ${pc(report.cited)} · ranks ${report.questions.map((q) => q.rank ?? '-').join(',')}`,
+    );
+  }
   if (!report.passed) {
     for (const failure of report.failures) {
       if (process.env.GITHUB_ACTIONS) console.log(`::error title=evals::${failure}`);

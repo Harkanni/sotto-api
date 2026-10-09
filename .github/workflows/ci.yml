@@ -389,7 +389,10 @@ jobs:
           MAILPIT_URL: http://localhost:8025
         run: |
           # On failure, the services' last lines become annotations (the PR shows them).
-          node scripts/eval.ts && exit 0
+          node scripts/eval.ts && status=0 || status=$?
+          # The real model's similarities, which the relevance floor is set from (a notice).
+          OLLAMA_URL=http://localhost:11434 node scripts/eval-similarity.ts || true
+          [ "$status" = 0 ] && exit 0
           df -h / | tail -1 | sed 's/^/::error title=disk::/'
           for c in api worker; do docker logs $c 2>&1 | grep -i -E 'error|warn' | tail -8 | sed "s/^/::error title=$c::/"; done
           docker compose -f compose.deps.yaml logs s3 2>&1 | tail -8 | sed 's/^/::error title=s3::/'

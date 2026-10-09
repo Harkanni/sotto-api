@@ -197,7 +197,8 @@ export class RetrievalService {
 
     const take = p(CANDIDATES);
     const kw = q.keywords
-      ? `SELECT c."id", row_number() OVER (ORDER BY ts_rank_cd(c."tsv", query, 32) DESC, c."id") AS r
+      ? `SELECT c."id", row_number() OVER (
+           ORDER BY ts_rank_cd(c."tsv", query, 32) DESC, ts_rank(c."tsv", query, 1) DESC, c."id") AS r
          FROM "chunks" c JOIN eligible e ON e."id" = c."id", to_tsquery('simple', ${p(q.keywords)}) query
          WHERE c."tsv" @@ query
          ORDER BY r LIMIT ${take}`
