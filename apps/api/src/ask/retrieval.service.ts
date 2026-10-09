@@ -98,7 +98,8 @@ export class RetrievalService {
     const perFile = input.perFile ?? limit;
     const keywords = keywordQuery(input.question);
     const vector = await this.ai.queryVector(input.question, input.signal);
-    const mode = vector ? 'hybrid' : 'keyword';
+    // Mock (hash) vectors never count as relevant on their own, so that search is keyword-only.
+    const mode = vector && !this.ai.embeddings.isMock ? 'hybrid' : 'keyword';
     if (!keywords && !vector) {
       return { passages: [], hidden: { restricted: 0, confidential: 0 }, mode };
     }

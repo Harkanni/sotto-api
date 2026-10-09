@@ -44,6 +44,8 @@ export const SearchResults = z
     /** Passages of documents and notes, with the page when the format has pages. */
     passages: z.array(
       z.object({
+        /** 1-based place in the fused ranking, shared with `moments`, for interleaving them. */
+        rank: z.number(),
         chunkId: z.string(),
         file: SourceFile,
         page: z.number().nullable(),
@@ -53,6 +55,7 @@ export const SearchResults = z
     /** Moments in meetings: where in the recording the words were said. */
     moments: z.array(
       z.object({
+        rank: z.number(),
         chunkId: z.string(),
         file: SourceFile,
         startMs: z.number(),
@@ -116,19 +119,22 @@ export class SearchController {
       title: p.title,
       kind: p.kind.toLowerCase() as 'document' | 'audio' | 'note',
     });
-    const passages = found.passages
+    const ranked = found.passages.map((p, i) => ({ ...p, rank: i + 1 }));
+    const passages = ranked
       .filter((p) => p.kind !== 'AUDIO')
       .slice(0, MAX_PASSAGES)
       .map((p) => ({
+        rank: p.rank,
         chunkId: p.chunkId,
         file: source(p),
         page: p.page,
         snippet: snippetOf(p.text, query.q),
       }));
-    const moments = found.passages
+    const moments = ranked
       .filter((p) => p.kind === 'AUDIO' && p.startMs !== null)
       .slice(0, MAX_MOMENTS)
       .map((p) => ({
+        rank: p.rank,
         chunkId: p.chunkId,
         file: source(p),
         startMs: p.startMs!,

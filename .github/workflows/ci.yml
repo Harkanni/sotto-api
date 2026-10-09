@@ -315,6 +315,77 @@ jobs:
         if: always()
         run: sudo chmod -R a+rX ~/whisper-models
 
+  # Phase 5's eval set with a real embedding model, so the semantic half of hybrid search is
+  # measured, not mocked: the built images on Postgres (pgvector), Redis, RabbitMQ, S3 and
+  # Ollama (nomic-embed-text, the default). The sample content is indexed by the worker, then
+  # every question in evals/kestrel.ts is searched and asked by an owner and by a viewer who
+  # can't open Board and finance. evals/score.ts decides pass or fail; the job page shows the
+  # table. No chat model here: answers are the labelled passages-only kind.
+  evals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build images
+        run: |
+          docker build --build-arg APP=api -t sotto-api:ci .
+          docker build --build-arg APP=worker -t sotto-worker:ci .
+      # The embedding model (~275 MB) is pulled once and cached between runs.
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/ollama
+          key: ollama-nomic-embed-text-v1
+      - name: Start dependencies and the embedding model
+        run: |
+          docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
+          for i in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+            sleep 1
+          done
+          curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
+          mkdir -p ~/ollama
+          docker run -d --name ollama --network sotto-deps_default -p 11434:11434 \
+            -v ~/ollama:/root/.ollama ollama/ollama:latest
+          for i in $(seq 1 30); do curl -fsS localhost:11434/api/version && break; sleep 1; done
+          docker exec ollama ollama pull nomic-embed-text
+      - name: Migrate and start the api and worker
+        env:
+          NET: sotto-deps_default
+          DB: postgresql://sotto:sotto@postgres:5432/sotto
+          MQ: amqp://sotto:sotto@rabbitmq:5672
+        run: |
+          S3="-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci"
+          AI="-e AI_EMBEDDINGS=ollama:nomic-embed-text -e OLLAMA_URL=http://ollama:11434"
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
+          docker run -d --name api --network $NET -p 4000:4000 $S3 $AI \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off -e ASK_RATE_PER_MINUTE=1000 sotto-api:ci
+          docker run -d --name worker --network $NET -p 4100:4100 $S3 $AI -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 sotto-worker:ci
+          for i in $(seq 1 90); do
+            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs api; docker logs worker; exit 1
+      - name: Run the eval set
+        env:
+          API_URL: http://localhost:4000
+          MAILPIT_URL: http://localhost:8025
+        run: node scripts/eval.ts
+      - name: Service logs
+        if: always()
+        run: |
+          for c in api worker ollama; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
+      # Ollama writes the model as root; the cache step saves it as the runner.
+      - name: Make the model cache readable
+        if: always()
+        run: sudo chmod -R a+rX ~/ollama
+
   secrets:
     runs-on: ubuntu-24.04
     steps:

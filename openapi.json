@@ -4311,6 +4311,9 @@
             "items": {
               "type": "object",
               "properties": {
+                "rank": {
+                  "type": "number"
+                },
                 "chunkId": {
                   "type": "string"
                 },
@@ -4348,6 +4351,7 @@
                 }
               },
               "required": [
+                "rank",
                 "chunkId",
                 "file",
                 "page",
@@ -4361,6 +4365,9 @@
             "items": {
               "type": "object",
               "properties": {
+                "rank": {
+                  "type": "number"
+                },
                 "chunkId": {
                   "type": "string"
                 },
@@ -4400,6 +4407,7 @@
                 }
               },
               "required": [
+                "rank",
                 "chunkId",
                 "file",
                 "startMs",
