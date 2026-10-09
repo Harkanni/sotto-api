@@ -259,4 +259,33 @@ describe.skipIf(withoutStorage)('meetings, content and sample files', () => {
     expect(titles).toContain('Weekly product sync');
     expect(titles).not.toContain('Support playbook'); // its collection doesn't exist there
   });
+
+  it('retries a sample load that failed part-way without adding anything twice', async () => {
+    const owner = new Person(t, 'retry@meet.example');
+    await owner.signIn();
+    const id = (await owner.post('/api/v1/workspaces', { name: 'Retry Co' }).expect(201)).body.id;
+    await owner.refresh();
+    t.queue.failAfter = 2; // two samples get queued, then the broker goes down
+    try {
+      await owner.post('/api/v1/onboarding/sample-content').expect(500);
+    } finally {
+      t.queue.failAfter = null;
+    }
+    // The one whose job failed was taken back; the two that made it stay.
+    expect(await db.file.count({ where: { workspaceId: id } })).toBe(2);
+    // The web offers to finish loading while files are missing.
+    expect((await owner.get('/api/v1/me').expect(200)).body.workspace.sample.filesLoaded).toBe(
+      false,
+    );
+
+    await owner.post('/api/v1/onboarding/sample-content').expect(200);
+    const titles = (await db.file.findMany({ where: { workspaceId: id } })).map((f) => f.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles).toHaveLength(SAMPLE_DOCS.length + SAMPLE_MEETINGS.length);
+    expect((await owner.get('/api/v1/me').expect(200)).body.workspace.sample.filesLoaded).toBe(
+      true,
+    );
+    const audit = await owner.get('/api/v1/audit?action=onboarding').expect(200);
+    expect(audit.body.entries).toHaveLength(1);
+  });
 });

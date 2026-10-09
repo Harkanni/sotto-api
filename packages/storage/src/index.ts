@@ -129,6 +129,17 @@ export class ObjectMissingError extends Error {
   }
 }
 
+/**
+ * True for a failure talking to storage itself: no credentials (the SDK's provider chain came up
+ * empty), a refused or timed-out connection, or an error storage answered with. The SDK puts
+ * `$metadata` on everything that came back from a request; credential errors happen before one.
+ * The api reports these as "storage unavailable" instead of a generic 500.
+ */
+export function isStorageError(error: unknown): boolean {
+  if (!(error instanceof Error) || error instanceof ObjectMissingError) return false;
+  return error.name === 'CredentialsProviderError' || '$metadata' in error;
+}
+
 function clientFor(config: StorageConfig, endpoint: string | undefined): S3Client {
   const credentials =
     config.S3_ACCESS_KEY_ID && config.S3_SECRET_ACCESS_KEY
@@ -151,12 +162,14 @@ function clientFor(config: StorageConfig, endpoint: string | undefined): S3Clien
 export class Storage {
   readonly keys: StorageKeys;
   readonly bucket: string;
+  private readonly prefix: string;
   private readonly s3: S3Client;
   /** Signs URLs for the host browsers use. */
   private readonly signer: S3Client;
 
   constructor(config: StorageConfig) {
     this.bucket = config.S3_BUCKET;
+    this.prefix = config.S3_PREFIX;
     this.keys = new StorageKeys(config.S3_PREFIX);
     this.s3 = clientFor(config, config.S3_ENDPOINT);
     this.signer = config.S3_PUBLIC_ENDPOINT
@@ -339,8 +352,14 @@ export class Storage {
     return deleted;
   }
 
-  /** Readiness: can we reach the bucket? */
-  async ping(): Promise<void> {
-    await this.s3.send(new ListObjectsV2Command({ Bucket: this.bucket, MaxKeys: 1 }));
+  /**
+   * Readiness: can we reach the bucket and sign requests? Lists only Sotto's own prefix, so it
+   * works for credentials scoped to it. The signal lets a probe give up on a slow answer.
+   */
+  async ping(signal?: AbortSignal): Promise<void> {
+    await this.s3.send(
+      new ListObjectsV2Command({ Bucket: this.bucket, Prefix: `${this.prefix}/`, MaxKeys: 1 }),
+      signal ? { abortSignal: signal } : {},
+    );
   }
 }

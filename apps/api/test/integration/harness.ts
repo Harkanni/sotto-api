@@ -42,8 +42,16 @@ export const withoutStorage = !TEST_DATABASE_URL || !TEST_S3_ENDPOINT;
 /** Keeps every queued job instead of sending it to RabbitMQ. */
 export class CapturingQueue {
   readonly sent: { queue: string; message: Record<string, unknown> }[] = [];
+  /** Publishes left before the broker "goes down" (null: never), for retry tests. */
+  failAfter: number | null = null;
 
   async publish(queue: string, message: Record<string, unknown>): Promise<void> {
+    if (this.failAfter !== null) {
+      if (this.failAfter <= 0) {
+        throw Object.assign(new Error('Queue unavailable'), { code: 'ECONNREFUSED' });
+      }
+      this.failAfter -= 1;
+    }
     this.sent.push({ queue, message });
   }
 

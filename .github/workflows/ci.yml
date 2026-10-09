@@ -181,7 +181,14 @@ jobs:
           docker build --build-arg APP=worker -t sotto-worker:ci .
           docker build -t sotto-transcriber:ci services/transcriber
       - name: Start dependencies
-        run: docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq
+        run: |
+          docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3
+          # The api's readiness includes storage (ADR 0018): create the bucket it pings.
+          for i in $(seq 1 30); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+            sleep 1
+          done
+          curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
       - name: Migrate, start services, wait for readiness
         env:
           NET: sotto-deps_default
@@ -193,6 +200,8 @@ jobs:
           # Production mode refuses to start without its own auth secret; a throwaway one here.
           docker run -d --name api --network $NET -p 4000:4000 \
             -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
+            -e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true \
+            -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci \
             -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 sotto-api:ci
           # The worker reads files from S3 only when jobs arrive, so no storage is needed to be
           # ready; AI_EMBEDDINGS=fake because there's no Ollama here (a labelled mock).

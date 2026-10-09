@@ -32,8 +32,12 @@ export const Me = z
         /**
          * Set once fictional sample content was loaded during onboarding: the sample
          * collections' keys ("product", "board"…) and their ids here. Null otherwise.
+         * `filesLoaded` is false while the sample memos and meetings are still missing (a load
+         * that failed part-way, or a workspace from Phase 3): loading again adds them.
          */
-        sample: z.object({ collections: z.record(z.string(), z.string()) }).nullable(),
+        sample: z
+          .object({ collections: z.record(z.string(), z.string()), filesLoaded: z.boolean() })
+          .nullable(),
       })
       .nullable(),
     /** Send as `X-CSRF-Token` on every write. Valid for this session only. */
@@ -51,9 +55,13 @@ export const UpdateMe = z
   .partial()
   .meta({ id: 'UpdateMe' });
 
-function sampleOf(metadata: string | null): { collections: Record<string, string> } | null {
+function sampleOf(
+  metadata: string | null,
+): { collections: Record<string, string>; filesLoaded: boolean } | null {
   const sample = readWorkspaceMeta(metadata).sample;
-  return sample ? { collections: sample.collections } : null;
+  return sample
+    ? { collections: sample.collections, filesLoaded: Boolean(sample.filesLoadedAt) }
+    : null;
 }
 
 @ApiTags('me')

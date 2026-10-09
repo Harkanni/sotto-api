@@ -2265,10 +2265,14 @@
                     "additionalProperties": {
                       "type": "string"
                     }
+                  },
+                  "filesLoaded": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
-                  "collections"
+                  "collections",
+                  "filesLoaded"
                 ],
                 "additionalProperties": false
               }

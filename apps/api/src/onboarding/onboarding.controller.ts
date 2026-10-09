@@ -95,6 +95,16 @@ export class OnboardingController {
       return { sample, created: true };
     });
 
+    // Recorded as soon as the collections exist: they stay even if adding the files fails, and a
+    // retry (created: false) doesn't record the load twice.
+    if (result.created) {
+      await this.audit.record(workspace.id, auth, {
+        action: 'onboarding.sample_loaded',
+        target: { type: 'workspace', id: workspace.id },
+        meta: { collections: SAMPLE_COLLECTIONS.length },
+      });
+    }
+
     let sample: NonNullable<WorkspaceMeta['sample']> = result.sample;
     if (!sample.filesLoadedAt) {
       await this.addFiles(workspace.id, auth.user.id, sample.collections);
@@ -105,14 +115,6 @@ export class OnboardingController {
         data: {
           metadata: writeWorkspaceMeta({ ...readWorkspaceMeta(current.metadata), sample }),
         },
-      });
-    }
-
-    if (result.created) {
-      await this.audit.record(workspace.id, auth, {
-        action: 'onboarding.sample_loaded',
-        target: { type: 'workspace', id: workspace.id },
-        meta: { collections: SAMPLE_COLLECTIONS.length },
       });
     }
     return { collections: sample.collections, loadedAt: sample.loadedAt };
@@ -137,10 +139,29 @@ export class OnboardingController {
       const id = collections[key];
       return id && existing.has(id) ? id : null;
     };
+    // A load that failed part-way (storage or the queue down) is retried by pressing the button
+    // again: samples that made it the first time aren't added twice.
+    const added = new Set(
+      (await db.file.findMany({ where: { source: 'SAMPLE' }, select: { title: true } })).map(
+        (f) => f.title,
+      ),
+    );
+    // Without its job a sample would sit at "Uploaded" for ever: take it back so a retry adds it.
+    const queueOrTakeBack = async (id: string, publish: () => Promise<void>) => {
+      try {
+        await publish();
+      } catch (error) {
+        await db.file.delete({ where: { id } }).catch(() => undefined);
+        await this.storage
+          .deletePrefix(this.storage.keys.file(workspaceId, id))
+          .catch(() => undefined);
+        throw error;
+      }
+    };
 
     for (const doc of SAMPLE_DOCS) {
       const collectionId = target(doc.collection);
-      if (!collectionId) continue;
+      if (!collectionId || added.has(doc.title)) continue;
       const id = newFileId();
       const body = Buffer.from(doc.body, 'utf8');
       const storageKey = this.storage.keys.original(workspaceId, id, `${doc.key}.md`);
@@ -163,19 +184,21 @@ export class OnboardingController {
           tags: doc.tags ?? [],
         },
       });
-      await this.queue.publish(Queues.fileUploaded, {
-        v: 1,
-        fileId: file.id,
-        workspaceId,
-        kind: 'DOCUMENT',
-        storageKey,
-        mime: file.mime,
-      });
+      await queueOrTakeBack(id, () =>
+        this.queue.publish(Queues.fileUploaded, {
+          v: 1,
+          fileId: file.id,
+          workspaceId,
+          kind: 'DOCUMENT',
+          storageKey,
+          mime: file.mime,
+        }),
+      );
     }
 
     for (const meeting of SAMPLE_MEETINGS) {
       const collectionId = target(meeting.collection);
-      if (!collectionId) continue;
+      if (!collectionId || added.has(meeting.title)) continue;
       const id = newFileId();
       const segments = sampleSegments(meeting.lines);
       const durationMs = segments.at(-1)!.endMs + 2_000;
@@ -219,16 +242,18 @@ export class OnboardingController {
           },
         },
       });
-      await this.queue.publish(Queues.transcribeCompleted, {
-        v: 1,
-        status: 'ok',
-        fileId: id,
-        workspaceId,
-        transcriptKey,
-        engine: 'sample',
-        model: 'none',
-        durationMs,
-      });
+      await queueOrTakeBack(id, () =>
+        this.queue.publish(Queues.transcribeCompleted, {
+          v: 1,
+          status: 'ok',
+          fileId: id,
+          workspaceId,
+          transcriptKey,
+          engine: 'sample',
+          model: 'none',
+          durationMs,
+        }),
+      );
     }
     this.log.log(`sample files queued for ${workspaceId}`);
   }
