@@ -347,11 +347,19 @@ jobs:
             sleep 1
           done
           curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
-          mkdir -p ~/ollama
+          # Problems are written as annotations, so they show on the PR without the log.
+          fail() { echo "::error title=evals setup::$1"; docker logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'; exit 1; }
+          mkdir -p "$HOME/ollama"
           docker run -d --name ollama --network sotto-deps_default -p 11434:11434 \
-            -v ~/ollama:/root/.ollama ollama/ollama:latest
-          for i in $(seq 1 30); do curl -fsS localhost:11434/api/version && break; sleep 1; done
-          docker exec ollama ollama pull nomic-embed-text
+            -v "$HOME/ollama:/root/.ollama" ollama/ollama:latest 2>/tmp/ollama-run.err \
+            || fail "ollama did not start: $(tail -c 300 /tmp/ollama-run.err)"
+          for i in $(seq 1 60); do curl -fsS localhost:11434/api/version >/dev/null && break; sleep 1; done
+          curl -fsS localhost:11434/api/version || fail "ollama is not answering on 11434"
+          # Pulled over Ollama's HTTP API (streams progress; the last line says success).
+          curl -fsS localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' | tail -1 \
+            || fail "could not pull nomic-embed-text"
+          curl -fsS localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' \
+            | head -c 80 || fail "nomic-embed-text does not embed"
       - name: Migrate and start the api and worker
         env:
           NET: sotto-deps_default
@@ -371,7 +379,8 @@ jobs:
             curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null && exit 0
             sleep 2
           done
-          docker logs api; docker logs worker; exit 1
+          for c in api worker; do docker logs $c 2>&1 | tail -15 | sed "s/^/::error title=$c::/"; done
+          exit 1
       - name: Run the eval set
         env:
           API_URL: http://localhost:4000
