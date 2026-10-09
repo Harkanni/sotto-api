@@ -29,7 +29,12 @@ export function highlightsIn(text: string, question: string): [number, number][]
  * where text was left out, and the highlights moved to fit. Without a match, the start.
  */
 export function snippetOf(text: string, question: string, max = 220): Snippet {
-  const clean = text.replace(/\s+/g, ' ').trim();
+  // Snippets are plain text: Markdown headings, bullets and bold markers go.
+  const clean = text
+    .replace(/^\s*(#{1,6}|[-*•]|\d+[.)])\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const all = highlightsIn(clean, question);
   if (clean.length <= max) return { text: clean, highlights: all };
 

@@ -30,6 +30,15 @@ describe('search snippets', () => {
     expect(s.text).not.toMatch(/^…\S*\s{2}/);
   });
 
+  it('drops Markdown markers', () => {
+    const s = snippetOf(
+      '## Risks\n\n1. Unreliable **connectivity** on field visits.',
+      'connectivity',
+    );
+    expect(s.text).toBe('Risks Unreliable connectivity on field visits.');
+    expect(marked(s)).toEqual(['connectivity']);
+  });
+
   it('starts at the beginning when nothing matches (a match by meaning)', () => {
     const s = snippetOf('a '.repeat(200), 'cash', 50);
     expect(s.text.startsWith('a a')).toBe(true);
