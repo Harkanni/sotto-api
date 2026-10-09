@@ -208,6 +208,7 @@ describe.skipIf(withDatabase)('collections, access and the audit log', () => {
 
     expect((await people.ada.get('/api/v1/me')).body.workspace.sample).toEqual({
       collections: first.body.collections,
+      filesLoaded: true,
     });
     // "Board and finance" is restricted with no grants yet: only owners and admins see it.
     expect(await names(people.priya)).toEqual([

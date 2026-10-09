@@ -273,11 +273,18 @@ describe.skipIf(withoutStorage)('meetings, content and sample files', () => {
     }
     // The one whose job failed was taken back; the two that made it stay.
     expect(await db.file.count({ where: { workspaceId: id } })).toBe(2);
+    // The web offers to finish loading while files are missing.
+    expect((await owner.get('/api/v1/me').expect(200)).body.workspace.sample.filesLoaded).toBe(
+      false,
+    );
 
     await owner.post('/api/v1/onboarding/sample-content').expect(200);
     const titles = (await db.file.findMany({ where: { workspaceId: id } })).map((f) => f.title);
     expect(new Set(titles).size).toBe(titles.length);
     expect(titles).toHaveLength(SAMPLE_DOCS.length + SAMPLE_MEETINGS.length);
+    expect((await owner.get('/api/v1/me').expect(200)).body.workspace.sample.filesLoaded).toBe(
+      true,
+    );
     const audit = await owner.get('/api/v1/audit?action=onboarding').expect(200);
     expect(audit.body.entries).toHaveLength(1);
   });
