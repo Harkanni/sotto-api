@@ -47,6 +47,8 @@ export const apiEnv = baseEnv
     ...aiEnv.shape,
     /** Questions one person may ask per minute (each may call a model). */
     ASK_RATE_PER_MINUTE: z.coerce.number().int().positive().default(20),
+    /** Overrides the embedding model's relevance floor (cosine, 0–1; see ask/retrieval). */
+    ASK_MIN_SIMILARITY: z.coerce.number().min(0).max(1).optional(),
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()

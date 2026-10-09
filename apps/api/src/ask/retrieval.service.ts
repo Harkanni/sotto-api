@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Sensitivity } from '@sotto/ai';
 import { assertModelId, forWorkspace, toVectorLiteral } from '@sotto/db';
 import { atLeast } from '../auth/roles.js';
+import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { type Viewer, visibleTo } from '../collections/collections.service.js';
 import { PrismaService } from '../core.module.js';
 import { AiService } from './ai.service.js';
@@ -14,10 +15,21 @@ const RRF_K = 60;
 const CANDIDATES = 40;
 /**
  * Cosine similarity a passage needs to count as relevant on meaning alone (no shared words).
- * Below it a passage only shows up because something has to be nearest. Tuned for
- * nomic-embed-text by the eval set; mock (hash) embeddings never count on their own.
+ * Below it a passage only shows up because something has to be nearest. Every model spreads
+ * its scores differently, so the floor is per model, measured by the eval set
+ * (scripts/eval-similarity.ts in CI's `evals` job): nomic-embed-text puts the sample
+ * content's answers at 0.53–0.85 and unrelated questions up to 0.63, so meaning alone counts
+ * from 0.65 and the closer answers rely on their shared words. `ASK_MIN_SIMILARITY` overrides
+ * it. Mock (hash) embeddings never count on their own.
  */
-export const MIN_SIMILARITY = 0.5;
+const SIMILARITY_FLOORS: Record<string, number> = { 'nomic-embed-text': 0.65 };
+const DEFAULT_SIMILARITY_FLOOR = 0.5;
+
+/** The floor for an embedding model ("nomic-embed-text", "nomic-embed-text:v1.5"…). */
+export function similarityFloor(model: string, override?: number): number {
+  if (override !== undefined) return override;
+  return SIMILARITY_FLOORS[model.split(':')[0]!] ?? DEFAULT_SIMILARITY_FLOOR;
+}
 const SENSITIVITIES: Sensitivity[] = ['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'];
 
 export type FileKind = 'DOCUMENT' | 'AUDIO' | 'NOTE';
@@ -87,10 +99,16 @@ interface Row {
  */
 @Injectable()
 export class RetrievalService {
+  /** Similarity that counts as relevant without shared words, for the serving model. */
+  private readonly floor: number;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AiService) private readonly ai: AiService,
-  ) {}
+    @Inject(APP_CONFIG) config: ApiConfig,
+  ) {
+    this.floor = similarityFloor(ai.embeddings.model, config.ASK_MIN_SIMILARITY);
+  }
 
   async retrieve(input: RetrieveInput): Promise<Retrieval> {
     const allowed = input.allowed ?? SENSITIVITIES;
@@ -159,7 +177,7 @@ export class RetrievalService {
   private relevant(rows: Row[]): Row[] {
     const semantic = !this.ai.embeddings.isMock;
     return rows.filter(
-      (r) => r.kr !== null || (semantic && r.similarity !== null && r.similarity >= MIN_SIMILARITY),
+      (r) => r.kr !== null || (semantic && r.similarity !== null && r.similarity >= this.floor),
     );
   }
 
