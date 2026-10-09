@@ -159,7 +159,9 @@ export class FilesService {
     where.push(query.trash === 'true' ? { deletedAt: { not: null } } : { deletedAt: null });
     if (query.collection === 'unfiled') where.push({ collectionId: null });
     else if (query.collection) where.push({ collectionId: query.collection });
-    if (query.kind) where.push({ kind: toKind(query.kind) });
+    // Notes are documents to the people reading them: `document` lists both.
+    if (query.kind === 'document') where.push({ kind: { in: ['DOCUMENT', 'NOTE'] } });
+    else if (query.kind) where.push({ kind: toKind(query.kind) });
     if (query.status) where.push({ status: toStatus(query.status) });
     if (query.pinned) where.push({ pinned: query.pinned === 'true' });
     if (query.q) where.push({ title: { contains: query.q, mode: 'insensitive' } });

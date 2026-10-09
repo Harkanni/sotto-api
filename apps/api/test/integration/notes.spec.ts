@@ -97,6 +97,13 @@ describe.skipIf(withoutStorage)('notes', () => {
     await k.people.ada.patch(`/api/v1/notes/${mine.body.file.id}`, { body: 'Tidied' }).expect(200);
   });
 
+  it('lists notes with documents', async () => {
+    const docs = await k.people.tunde.get('/api/v1/files?kind=document').expect(200);
+    expect(docs.body.items.map((f: { id: string }) => f.id)).toContain(noteId);
+    const notes = await k.people.tunde.get('/api/v1/files?kind=note').expect(200);
+    expect(notes.body.items.every((f: { kind: string }) => f.kind === 'note')).toBe(true);
+  });
+
   it('edits only notes', async () => {
     const id = await k.seed({ key: 'memo', title: 'A memo', texts: ['Text'] });
     await k.people.ada.patch(`/api/v1/notes/${id}`, { body: 'x' }).expect(409);
