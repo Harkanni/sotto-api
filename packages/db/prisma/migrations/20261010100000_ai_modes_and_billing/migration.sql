@@ -1,6 +1,7 @@
 -- Phase 6: AI modes, providers and billing.
 -- BYOK keys (envelope-encrypted), the workspace AI policy, metering and the subscription.
 -- Generated with `prisma migrate diff`; the CHECKs at the end are hand-written.
+-- (Edited before merge: usage_events.subject_id. Never deployed before that.)
 
 -- CreateEnum
 CREATE TYPE "usage_kind" AS ENUM ('AI_INPUT_TOKENS', 'AI_OUTPUT_TOKENS', 'TRANSCRIPTION_SECONDS', 'STORAGE_BYTES');
@@ -55,6 +56,7 @@ CREATE TABLE "usage_events" (
     "quantity" BIGINT NOT NULL,
     "route" "ai_route",
     "model" TEXT,
+    "subject_id" TEXT,
     "at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "usage_events_pkey" PRIMARY KEY ("id")
@@ -87,6 +89,9 @@ CREATE TABLE "billing_events" (
 
 -- CreateIndex
 CREATE INDEX "ai_provider_configs_workspace_id_idx" ON "ai_provider_configs"("workspace_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "usage_events_kind_subject_id_key" ON "usage_events"("kind", "subject_id");
 
 -- CreateIndex
 CREATE INDEX "usage_events_workspace_id_kind_at_idx" ON "usage_events"("workspace_id", "kind", "at");

@@ -99,6 +99,12 @@ describe.skipIf(withDatabase)('ask', () => {
       return settings.usePlatformChats({ provider, model: 'scripted-1' }, null);
     }
     settings.usePlatformChats(null, { provider, models: ['scripted-1'] });
+    // Managed AI is a Pro feature.
+    await k.db.subscription.upsert({
+      where: { workspaceId: k.workspaceId },
+      create: { workspaceId: k.workspaceId, plan: 'PRO', provider: 'test' },
+      update: {},
+    });
     await k.db.workspaceAiPolicy.create({
       data: {
         workspaceId: k.workspaceId,

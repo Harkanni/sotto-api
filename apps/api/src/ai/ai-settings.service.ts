@@ -18,6 +18,7 @@ import {
 import { type AiProviderConfig, type AiRoute, type Prisma, forWorkspace } from '@sotto/db';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { PrismaService } from '../core.module.js';
+import { UsageService } from '../billing/usage.service.js';
 import { ApiException } from '../common/errors.js';
 import { formatRef, parseRef } from './models.js';
 
@@ -149,6 +150,7 @@ export class AiSettingsService {
   constructor(
     @Inject(APP_CONFIG) config: ApiConfig,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(UsageService) private readonly usage: UsageService,
   ) {
     this.vault = keyVaultFrom(config);
     this.allowPrivateUrls = config.AI_BYOK_ALLOW_PRIVATE_URLS;
@@ -230,6 +232,17 @@ export class AiSettingsService {
         );
       }
     }
+    if (
+      allowed.includes('MANAGED') &&
+      !current.allowedModes.includes('MANAGED') &&
+      !(await this.usage.allowsMode(workspaceId, 'MANAGED'))
+    ) {
+      throw new ApiException(
+        402,
+        'PLAN_REQUIRED',
+        'Managed AI comes with the Pro plan. Upgrade in Usage and billing, or use your own API key.',
+      );
+    }
     const confidential = [...new Set(next.confidentialModes)].filter((m) => m !== 'PRIVATE');
     if (confidential.some((m) => !allowed.includes(m))) {
       throw new ApiException(
@@ -288,7 +301,10 @@ export class AiSettingsService {
   async catalog(workspaceId: string, policyOverride?: Policy): Promise<CatalogEntry[]> {
     const policy = policyOverride ?? (await this.policy(workspaceId));
     const disabled = new Set(policy.disabledModels);
-    const allowed = new Set(policy.allowedModes);
+    // A mode counts as allowed when the policy allows it and the plan includes it (a Free
+    // workspace that once allowed Managed keeps the setting, but can't use it).
+    const { plan } = await this.usage.plan(workspaceId);
+    const allowed = new Set(policy.allowedModes.filter((m) => plan.modes.includes(m)));
     const entries: Omit<CatalogEntry, 'enabled' | 'allowed'>[] = [];
 
     if (this.privateChat) {

@@ -797,9 +797,13 @@ model UsageEvent {
   quantity    BigInt
   route       AiRoute?
   model       String?
+  /// What was used, when counting it twice must be impossible (a retried transcription: the
+  /// file id). Unique per kind.
+  subjectId   String?   @map("subject_id")
   at          DateTime  @default(now())
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
+  @@unique([kind, subjectId])
   @@index([workspaceId, kind, at])
   @@map("usage_events")
 }

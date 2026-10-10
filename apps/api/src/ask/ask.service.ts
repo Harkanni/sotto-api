@@ -9,6 +9,7 @@ import {
   tenantTransaction,
 } from '@sotto/db';
 import { AuditService } from '../audit/audit.service.js';
+import { UsageService } from '../billing/usage.service.js';
 import { redisRateLimitStore } from '../auth/rate-limit.js';
 import type { Viewer } from '../collections/collections.service.js';
 import { ApiException } from '../common/errors.js';
@@ -82,6 +83,7 @@ export class AskService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AiSettingsService) private readonly settings: AiSettingsService,
+    @Inject(UsageService) private readonly usage: UsageService,
     @Inject(RetrievalService) private readonly retrieval: RetrievalService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(RedisService) redis: RedisService,
@@ -136,7 +138,10 @@ export class AskService {
   ): Promise<{ chat: ResolvedChat | null; policy: Policy }> {
     const policy = await this.settings.policy(viewer.workspaceId);
     const ref = model ?? (await this.settings.usableModels(viewer.workspaceId)).defaultRef;
-    return { chat: ref ? await this.settings.resolve(viewer.workspaceId, ref) : null, policy };
+    const chat = ref ? await this.settings.resolve(viewer.workspaceId, ref) : null;
+    // The month's allowance is checked before anything is saved or sent (BYOK has none).
+    if (chat) await this.usage.checkAsk(viewer.workspaceId, chat.route);
+    return { chat, policy };
   }
 
   /**
@@ -363,6 +368,24 @@ export class AskService {
             data: { content: content.trimStart() },
           });
         }
+      }
+      if (usage) {
+        await this.usage.record(viewer.workspaceId, [
+          {
+            kind: 'AI_INPUT_TOKENS',
+            quantity: usage.inputTokens,
+            route: chat.route,
+            model: chat.ref,
+            userId: viewer.userId,
+          },
+          {
+            kind: 'AI_OUTPUT_TOKENS',
+            quantity: usage.outputTokens,
+            route: chat.route,
+            model: chat.ref,
+            userId: viewer.userId,
+          },
+        ]);
       }
       const tail = followUps.end();
       // The saved answer is trimmed; the stream ends the same way.

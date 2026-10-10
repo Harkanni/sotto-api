@@ -33,6 +33,53 @@
         ]
       }
     },
+    "/api/v1/usage": {
+      "get": {
+        "operationId": "UsageController_report",
+        "parameters": [
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "30d",
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d",
+                "90d"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "This month’s usage against the plan, and daily usage for a chart.",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v1/status": {
       "get": {
         "operationId": "StatusController_status",
@@ -3242,6 +3289,218 @@
           "microsoft"
         ],
         "additionalProperties": false
+      },
+      "UsageReport": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "enum": [
+              "7d",
+              "30d",
+              "90d"
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "period": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "additionalProperties": false
+          },
+          "meters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "privateTokens",
+                    "managedTokens",
+                    "transcriptionMinutes",
+                    "storageBytes"
+                  ]
+                },
+                "used": {
+                  "type": "number"
+                },
+                "limit": {
+                  "nullable": true,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "used",
+                "limit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "byokTokens": {
+            "type": "number"
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string"
+                },
+                "privateTokens": {
+                  "type": "number"
+                },
+                "managedTokens": {
+                  "type": "number"
+                },
+                "byokTokens": {
+                  "type": "number"
+                },
+                "transcriptionMinutes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "date",
+                "privateTokens",
+                "managedTokens",
+                "byokTokens",
+                "transcriptionMinutes"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "range",
+          "plan",
+          "period",
+          "meters",
+          "byokTokens",
+          "daily"
+        ],
+        "additionalProperties": false
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PlanId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "price": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "monthly": {
+                "type": "number"
+              },
+              "yearly": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "monthly",
+              "yearly"
+            ],
+            "additionalProperties": false
+          },
+          "currency": {
+            "type": "string"
+          },
+          "placeholderPrices": {
+            "type": "boolean"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRIVATE",
+                "BYOK",
+                "MANAGED"
+              ]
+            }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "privateTokens": {
+                "nullable": true,
+                "type": "number"
+              },
+              "managedTokens": {
+                "nullable": true,
+                "type": "number"
+              },
+              "transcriptionMinutes": {
+                "nullable": true,
+                "type": "number"
+              },
+              "storageBytes": {
+                "nullable": true,
+                "type": "number"
+              }
+            },
+            "required": [
+              "privateTokens",
+              "managedTokens",
+              "transcriptionMinutes",
+              "storageBytes"
+            ],
+            "additionalProperties": false
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "selfServe": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "summary",
+          "price",
+          "currency",
+          "placeholderPrices",
+          "modes",
+          "limits",
+          "features",
+          "selfServe"
+        ],
+        "additionalProperties": false
+      },
+      "PlanId": {
+        "type": "string",
+        "enum": [
+          "FREE",
+          "PRO",
+          "BUSINESS",
+          "ENTERPRISE"
+        ]
       },
       "Me": {
         "type": "object",

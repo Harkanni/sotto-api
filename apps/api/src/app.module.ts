@@ -4,6 +4,7 @@ import { AskModule } from './ask/ask.module.js';
 import { AuditApiModule } from './audit/audit.controller.js';
 import { AuditModule } from './audit/audit.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { CollectionsModule } from './collections/collections.controller.js';
 import { CoreModule } from './core.module.js';
 import { EventsModule } from './events/events.controller.js';
@@ -23,6 +24,7 @@ import { WorkspacesModule } from './workspaces/workspaces.controller.js';
     MailModule,
     AuthModule,
     AuditModule,
+    BillingModule,
     HealthModule,
     MeModule,
     WorkspacesModule,
