@@ -80,6 +80,154 @@
         ]
       }
     },
+    "/api/v1/billing": {
+      "get": {
+        "operationId": "BillingController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Billing"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The plan, the subscription and the plans to choose from.",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/checkout": {
+      "post": {
+        "operationId": "BillingController_checkout",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUrl"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start checkout for a plan; returns the payment page to open.",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/confirm": {
+      "post": {
+        "operationId": "BillingController_confirm",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmCheckoutBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Billing"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Back from checkout: the api verifies the payment with the provider, then the plan changes.",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/portal": {
+      "post": {
+        "operationId": "BillingController_portal",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingUrl"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The provider’s page to update the card or cancel (test mode: ends the plan at once).",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/api/v1/status": {
       "get": {
         "operationId": "StatusController_status",
@@ -3502,6 +3650,127 @@
           "ENTERPRISE"
         ]
       },
+      "Billing": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/Plan"
+          },
+          "subscription": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "PAST_DUE",
+                  "CANCELLED"
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "currentPeriodEnd": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "provider",
+              "currentPeriodEnd"
+            ],
+            "additionalProperties": false
+          },
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Plan"
+            }
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "paystack",
+                  "test"
+                ]
+              },
+              "testMode": {
+                "type": "boolean"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "testMode",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "plan",
+          "subscription",
+          "plans",
+          "provider"
+        ],
+        "additionalProperties": false
+      },
+      "CheckoutBody": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "PRO",
+              "BUSINESS"
+            ]
+          },
+          "interval": {
+            "default": "monthly",
+            "type": "string",
+            "enum": [
+              "monthly",
+              "yearly"
+            ]
+          }
+        },
+        "required": [
+          "plan"
+        ]
+      },
+      "BillingUrl": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "ConfirmCheckoutBody": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
       "Me": {
         "type": "object",
         "properties": {
@@ -4133,7 +4402,10 @@
               "ai.key_added",
               "ai.key_replaced",
               "ai.key_renamed",
-              "ai.key_removed"
+              "ai.key_removed",
+              "billing.plan_changed",
+              "billing.payment_failed",
+              "billing.cancelled"
             ]
           },
           "summary": {
