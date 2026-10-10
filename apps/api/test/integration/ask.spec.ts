@@ -1,7 +1,6 @@
 import type { ChatMessage, ChatProvider, ChatRequest, DataLocation } from '@sotto/ai';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AiSettingsService } from '../../src/ai/ai-settings.service.js';
-import { AiService } from '../../src/ask/ai.service.js';
 import { FOLLOW_UPS } from '../../src/ask/answer.js';
 import { withDatabase } from './harness.js';
 import { Kestrel, type Who } from './kestrel.js';
@@ -82,7 +81,6 @@ function parseEvents(text: string): Event[] {
 
 describe.skipIf(withDatabase)('ask', () => {
   const k = new Kestrel('ask.example');
-  let ai: AiService;
   const chat = {
     inCluster: new ScriptedChat('IN_CLUSTER'),
     outside: new ScriptedChat('THIRD_PARTY'),
@@ -134,7 +132,6 @@ describe.skipIf(withDatabase)('ask', () => {
   beforeAll(async () => {
     process.env.ASK_RATE_PER_MINUTE = '1000';
     await k.start();
-    ai = k.t.app.get(AiService);
     await k.seedLibrary();
   });
   afterAll(() => k.stop());

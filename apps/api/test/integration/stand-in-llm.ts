@@ -15,6 +15,8 @@ export class StandInLlm {
   readonly received: ReceivedRequest[] = [];
   /** The streamed answer; tests may change it. */
   reply = 'From the stand-in [1].';
+  /** When set, chat requests fail with this status (a revoked key, an outage). */
+  failStatus: number | null = null;
   private server: Server | null = null;
   url = '';
 
@@ -42,6 +44,10 @@ export class StandInLlm {
           );
           return;
         }
+        if (path.endsWith('/chat/completions') && this.failStatus) {
+          res.writeHead(this.failStatus).end('{}');
+          return;
+        }
         if (path.endsWith('/chat/completions')) {
           res.writeHead(200, { 'content-type': 'text/event-stream' });
           for (const word of this.reply.split(/(?<= )/)) {
@@ -60,6 +66,10 @@ export class StandInLlm {
     const address = this.server.address();
     this.url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/v1`;
     return this;
+  }
+
+  chatCalls(): number {
+    return this.received.filter((r) => r.path.endsWith('/chat/completions')).length;
   }
 
   /** Every prompt text sent to the chat endpoint, joined. */
