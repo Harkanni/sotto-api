@@ -2771,6 +2771,397 @@
           "ask"
         ]
       }
+    },
+    "/api/v1/ai/policy": {
+      "get": {
+        "operationId": "AiController_getPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Where questions may be answered, and which modes this server offers.",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "operationId": "AiController_putPolicy",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiPolicy"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Change the AI policy: allowed modes, defaults, Confidential rule.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/models": {
+      "get": {
+        "operationId": "AiController_models",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModels"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The models you can pick in Ask, and the default.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/catalog": {
+      "get": {
+        "operationId": "AiController_catalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModels"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Every model this workspace could use, on or off.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/catalog/{ref}": {
+      "put": {
+        "operationId": "AiController_toggle",
+        "parameters": [
+          {
+            "name": "ref",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 300
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleAiModel"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCatalogEntry"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Turn a model on or off for this workspace.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/providers": {
+      "get": {
+        "operationId": "AiController_keys",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiKeys"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "This workspace’s own API keys (never the keys themselves).",
+        "tags": [
+          "ai"
+        ]
+      },
+      "post": {
+        "operationId": "AiController_addKey",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAiKey"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiKey"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Add an API key. It is tested first and stored encrypted only if it works.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/providers/{id}": {
+      "patch": {
+        "operationId": "AiController_updateKey",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAiKey"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiKey"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Rename a key, or replace it with a new one (tested first).",
+        "tags": [
+          "ai"
+        ]
+      },
+      "delete": {
+        "operationId": "AiController_removeKey",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Remove a key. Its models leave the catalog at once.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/providers/{id}/test": {
+      "post": {
+        "operationId": "AiController_testKey",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiKey"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Test a saved key again and refresh its models.",
+        "tags": [
+          "ai"
+        ]
+      }
     }
   },
   "info": {
@@ -3467,7 +3858,13 @@
               "file.downloaded",
               "note.created",
               "note.edited",
-              "ask.asked"
+              "ask.asked",
+              "ai.policy_changed",
+              "ai.model_toggled",
+              "ai.key_added",
+              "ai.key_replaced",
+              "ai.key_renamed",
+              "ai.key_removed"
             ]
           },
           "summary": {
@@ -5030,6 +5427,404 @@
         "required": [
           "value"
         ]
+      },
+      "AiSettings": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/AiPolicy"
+          },
+          "modes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "$ref": "#/components/schemas/AiMode"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "availability": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "available"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "mode",
+                "label",
+                "availability"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "effectiveDefault": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "policy",
+          "modes",
+          "effectiveDefault"
+        ],
+        "additionalProperties": false
+      },
+      "AiPolicy": {
+        "type": "object",
+        "properties": {
+          "allowedModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiMode"
+            }
+          },
+          "defaultMode": {
+            "$ref": "#/components/schemas/AiMode"
+          },
+          "defaultModel": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "confidentialModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiMode"
+            }
+          },
+          "disabledModels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 300
+            }
+          }
+        },
+        "required": [
+          "allowedModes",
+          "defaultMode",
+          "defaultModel",
+          "confidentialModes",
+          "disabledModels"
+        ],
+        "additionalProperties": false
+      },
+      "AiMode": {
+        "type": "string",
+        "enum": [
+          "PRIVATE",
+          "BYOK",
+          "MANAGED"
+        ]
+      },
+      "UpdateAiPolicy": {
+        "type": "object",
+        "properties": {
+          "allowedModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiMode"
+            }
+          },
+          "defaultMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AiMode"
+              }
+            ]
+          },
+          "defaultModel": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "confidentialModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiMode"
+            }
+          },
+          "disabledModels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 300
+            }
+          }
+        }
+      },
+      "AiModels": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiCatalogEntry"
+            }
+          },
+          "defaultRef": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "models",
+          "defaultRef"
+        ],
+        "additionalProperties": false
+      },
+      "AiCatalogEntry": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AiMode"
+          },
+          "model": {
+            "type": "string"
+          },
+          "providerLabel": {
+            "type": "string"
+          },
+          "keyLabel": {
+            "nullable": true,
+            "type": "string"
+          },
+          "routeLabel": {
+            "type": "string"
+          },
+          "dataLocation": {
+            "type": "string",
+            "enum": [
+              "IN_CLUSTER",
+              "THIRD_PARTY"
+            ]
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "readsConfidential": {
+            "type": "boolean"
+          },
+          "readsRestricted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ref",
+          "mode",
+          "model",
+          "providerLabel",
+          "keyLabel",
+          "routeLabel",
+          "dataLocation",
+          "isMock",
+          "enabled",
+          "allowed",
+          "readsConfidential",
+          "readsRestricted"
+        ],
+        "additionalProperties": false
+      },
+      "ToggleAiModel": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "AiKeys": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiKey"
+            }
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiProviderInfo"
+            }
+          },
+          "canStoreKeys": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "keys",
+          "providers",
+          "canStoreKeys"
+        ],
+        "additionalProperties": false
+      },
+      "AiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/AiProviderId"
+          },
+          "providerLabel": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "keyLast4": {
+            "nullable": true,
+            "type": "string"
+          },
+          "baseUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verifiedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastError": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "providerLabel",
+          "label",
+          "keyLast4",
+          "baseUrl",
+          "models",
+          "verifiedAt",
+          "lastError",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "AiProviderId": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "openai",
+          "google",
+          "openai-compatible"
+        ]
+      },
+      "AiProviderInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AiProviderId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "keyHint": {
+            "type": "string"
+          },
+          "keyRequired": {
+            "type": "boolean"
+          },
+          "needsBaseUrl": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "keyHint",
+          "keyRequired",
+          "needsBaseUrl"
+        ],
+        "additionalProperties": false
+      },
+      "AddAiKey": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/AiProviderId"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "apiKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 500
+          },
+          "baseUrl": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "provider",
+          "label"
+        ]
+      },
+      "UpdateAiKey": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "apiKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 500
+          }
+        }
       }
     }
   }
