@@ -330,4 +330,15 @@ describe.skipIf(withDatabase)('AI settings', () => {
       (settings as { vault: typeof vault }).vault = vault;
     }
   });
+
+  it('shows admins the embedding indexes and how much of this workspace each covers', async () => {
+    await k.people.tunde.get('/api/v1/ai/embeddings/indexes').expect(403);
+    await k.people.priya.get('/api/v1/ai/embeddings/indexes').expect(403);
+    await k.seed({ key: 'indexed', title: 'Indexed memo', texts: ['runway', 'hiring'] });
+    const res = await k.people.ada.get('/api/v1/ai/embeddings/indexes').expect(200);
+    expect(res.body.configured).toEqual(expect.any(String));
+    expect(res.body.indexes).toEqual([
+      { model: 'test:concepts', dims: 68, status: 'READY', serving: true, embedded: 2, total: 2 },
+    ]);
+  });
 });

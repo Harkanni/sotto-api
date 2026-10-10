@@ -50,7 +50,11 @@ export {
   hnswIndexSql,
   indexNameFor,
   toVectorLiteral,
+  indexCoverage,
+  setIndexStatus,
+  swapServingIndex,
   writeEmbeddings,
+  type IndexCoverage,
   type EmbeddingRow,
   type RawExecutor,
 } from './vectors.js';

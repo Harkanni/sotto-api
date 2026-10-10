@@ -2977,6 +2977,38 @@
         ]
       }
     },
+    "/api/v1/ai/embeddings/indexes": {
+      "get": {
+        "operationId": "AiController_indexes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingIndexes"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Embedding indexes: which one serves, and how much each covers.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/v1/ai/policy": {
       "get": {
         "operationId": "AiController_getPolicy",
@@ -5983,6 +6015,65 @@
         "required": [
           "value"
         ]
+      },
+      "EmbeddingIndexes": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "string"
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string"
+                },
+                "dims": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "BUILDING",
+                    "READY",
+                    "RETIRED"
+                  ]
+                },
+                "serving": {
+                  "type": "boolean"
+                },
+                "embedded": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "model",
+                "dims",
+                "status",
+                "serving",
+                "embedded",
+                "total"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "configured",
+          "indexes"
+        ],
+        "additionalProperties": false
       },
       "AiSettings": {
         "type": "object",

@@ -13,12 +13,14 @@ import {
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BYOK_PROVIDERS } from '@sotto/ai';
-import type { AiProviderConfig, AiRoute } from '@sotto/db';
+import { type AiProviderConfig, type AiRoute, indexCoverage } from '@sotto/db';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service.js';
 import { RequireRole } from '../auth/auth.guard.js';
 import { ApiErrors, ApiException } from '../common/errors.js';
 import { Ctx, type RequestAuth, workspaceOf } from '../common/request.js';
+import { APP_CONFIG, type ApiConfig } from '../config.js';
+import { PrismaService } from '../core.module.js';
 import { IdParam } from '../workspaces/workspaces.controller.js';
 import { AiSettingsService, type CatalogEntry, type Policy } from './ai-settings.service.js';
 import { MODE_LABEL, parseRef } from './models.js';
@@ -177,6 +179,26 @@ function keyOut(k: AiProviderConfig): z.infer<typeof AiKeySchema> {
 
 const ModelRefParam = z.string().min(3).max(300);
 
+export const EmbeddingIndexesSchema = z
+  .object({
+    /** The model new files are embedded with (AI_EMBEDDINGS). */
+    configured: z.string(),
+    indexes: z.array(
+      z.object({
+        model: z.string(),
+        dims: z.number().int(),
+        /** BUILDING until it covers every chunk; RETIRED once another index replaced it. */
+        status: z.enum(['BUILDING', 'READY', 'RETIRED']),
+        /** The one searches use. */
+        serving: z.boolean(),
+        /** This workspace's passages with a vector from this model, of all its passages. */
+        embedded: z.number().int(),
+        total: z.number().int(),
+      }),
+    ),
+  })
+  .meta({ id: 'EmbeddingIndexes' });
+
 /**
  * AI settings (BRIEF §3, PLAN → API "AI settings" and "AI providers"): where questions may go,
  * the workspace's own keys and which models people can pick. Admins and owners change them;
@@ -189,7 +211,23 @@ export class AiController {
   constructor(
     @Inject(AiSettingsService) private readonly settings: AiSettingsService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) private readonly config: ApiConfig,
   ) {}
+
+  /**
+   * Which embedding index serves searches and how much of this workspace each covers. Read
+   * only: a re-index runs across every workspace, so it is an operator command
+   * (`node dist/reindex-cli.js` in the worker, ADR 0027), not a workspace setting.
+   */
+  @Get('embeddings/indexes')
+  @RequireRole('admin')
+  @ApiOperation({ summary: 'Embedding indexes: which one serves, and how much each covers.' })
+  @ApiOkResponse({ standardSchema: EmbeddingIndexesSchema })
+  async indexes(@Ctx() auth: RequestAuth): Promise<z.infer<typeof EmbeddingIndexesSchema>> {
+    const rows = await indexCoverage(this.prisma.client, workspaceOf(auth).id);
+    return { configured: this.config.AI_EMBEDDINGS, indexes: rows };
+  }
 
   private async settingsOut(workspaceId: string): Promise<z.infer<typeof AiSettingsSchema>> {
     const policy = await this.settings.policy(workspaceId);
