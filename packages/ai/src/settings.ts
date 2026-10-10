@@ -4,6 +4,7 @@ import {
   OpenAICompatibleChatProvider,
   OpenAICompatibleEmbeddingProvider,
 } from './adapters/openai-compatible.js';
+import { byokChatProvider, byokProvider } from './catalog.js';
 import { parseModelRef } from './registry.js';
 import type { ChatProvider, EmbeddingProvider } from './types.js';
 
@@ -35,6 +36,20 @@ export const aiEnv = z.object({
   AI_KEYS_MASTER: optional,
   /** Older master keys, comma separated, kept only to open keys wrapped before a rotation. */
   AI_KEYS_MASTER_PREVIOUS: optional,
+  /**
+   * Managed mode (BRIEF §3: Sotto's own provider account, metered against the plan):
+   * "provider:model" references for one BYOK-style provider, comma separated, e.g.
+   * "anthropic:claude-sonnet-4-5,anthropic:claude-haiku-4-5". Unset → Managed is unavailable,
+   * and the settings screen says so.
+   */
+  AI_MANAGED_CHAT: optional,
+  AI_MANAGED_KEY: optional,
+  /** Only for an openai-compatible Managed provider. */
+  AI_MANAGED_BASE_URL: optional,
+  /** Local development and tests only: let BYOK endpoints point at private addresses. */
+  AI_BYOK_ALLOW_PRIVATE_URLS: z
+    .preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean())
+    .default(false),
 });
 export type AiSettings = z.infer<typeof aiEnv>;
 
@@ -100,4 +115,35 @@ export function askChatFrom(
 ): { provider: ChatProvider; model: string } | null {
   const ref = settings.AI_ASK_CHAT ?? settings.AI_PRIVATE_CHAT;
   return ref ? chatFrom(ref, settings) : null;
+}
+
+/** Sotto's own account for Managed mode: one provider, the models it offers, or null. */
+export function managedChatFrom(
+  settings: AiSettings,
+): { provider: ChatProvider; models: string[] } | null {
+  if (!settings.AI_MANAGED_CHAT) return null;
+  const refs = settings.AI_MANAGED_CHAT.split(',')
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map(parseModelRef);
+  const ids = new Set(refs.map((r) => r.provider));
+  const [id] = ids;
+  if (!id || ids.size > 1) {
+    throw new AiConfigError(
+      'AI_MANAGED_CHAT must name one provider, e.g. "anthropic:model-a,anthropic:model-b"',
+    );
+  }
+  const info = byokProvider(id);
+  if (!info) throw new AiConfigError(`Unknown Managed provider "${id}"`);
+  if (info.keyRequired && !settings.AI_MANAGED_KEY) {
+    throw new AiConfigError('AI_MANAGED_CHAT needs AI_MANAGED_KEY');
+  }
+  return {
+    provider: byokChatProvider(
+      id,
+      { apiKey: settings.AI_MANAGED_KEY, baseUrl: settings.AI_MANAGED_BASE_URL },
+      info.badge,
+    ),
+    models: refs.map((r) => r.model),
+  };
 }
