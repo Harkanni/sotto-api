@@ -5,6 +5,7 @@ import { Queues } from '@sotto/contracts';
 import { partCountFor, partSizeFor } from '@sotto/storage';
 import type { z } from 'zod';
 import { AuditService } from '../audit/audit.service.js';
+import { UsageService } from '../billing/usage.service.js';
 import { RequireRole } from '../auth/auth.guard.js';
 import { CollectionsService, type Viewer } from '../collections/collections.service.js';
 import { ApiErrors, ApiException } from '../common/errors.js';
@@ -63,6 +64,7 @@ export class UploadsController {
     @Inject(QueueService) private readonly queue: QueueService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(APP_CONFIG) private readonly config: ApiConfig,
+    @Inject(UsageService) private readonly usage: UsageService,
   ) {}
 
   @Post()
@@ -98,6 +100,7 @@ export class UploadsController {
         'You can view this collection but not add files to it.',
       );
     }
+    await this.usage.checkUpload(viewer.workspaceId, format.kind, body.sizeBytes);
 
     const id = newFileId();
     const key = this.storage.keys.original(viewer.workspaceId, id, body.filename);

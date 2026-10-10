@@ -309,6 +309,23 @@ export async function onTranscribeCompleted(deps: Deps, msg: TranscribeCompleted
         isMock: doc.isMock,
       },
     });
+    // Metering (BRIEF §4): minutes transcribed, once per file however often this message is
+    // retried (the file id is the usage row's subject, unique per kind).
+    if (doc.durationMs > 0) {
+      await tx.usageEvent.createMany({
+        data: [
+          {
+            workspaceId: current.workspaceId,
+            kind: 'TRANSCRIPTION_SECONDS',
+            quantity: BigInt(Math.ceil(doc.durationMs / 1000)),
+            route: 'PRIVATE',
+            model: doc.model,
+            subjectId: current.id,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    }
     // Batches keep each statement well under Postgres's parameter limit on long meetings.
     for (let i = 0; i < lines.length; i += 1_000) {
       await tx.transcriptSegment.createMany({

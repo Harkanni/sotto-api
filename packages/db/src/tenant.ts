@@ -25,6 +25,10 @@ export const TENANT_MODELS = [
   'Message',
   'Citation',
   'Note',
+  'AiProviderConfig',
+  'WorkspaceAiPolicy',
+  'UsageEvent',
+  'Subscription',
 ] as const;
 
 export type TenantModel = (typeof TENANT_MODELS)[number];

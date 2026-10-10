@@ -88,9 +88,21 @@ export const UpdateConversation = z
   .refine((b) => b.title !== undefined || b.scope !== undefined, 'Change the title or the scope.')
   .meta({ id: 'UpdateConversation' });
 
+/** A model reference from `GET /ai/models` (Switch model); omitted = the workspace default. */
+const ModelChoice = z.string().min(3).max(300).optional();
+
 export const AskBody = z
-  .object({ content: z.string().trim().min(1, 'Ask a question first.').max(4_000) })
+  .object({
+    content: z.string().trim().min(1, 'Ask a question first.').max(4_000),
+    model: ModelChoice,
+  })
   .meta({ id: 'AskBody' });
+
+/** Optional: an empty request answers again with the workspace default. */
+export const RegenerateBody = z
+  .object({ model: ModelChoice })
+  .optional()
+  .meta({ id: 'RegenerateBody' });
 
 export const FeedbackBody = z
   .object({ value: z.union([z.literal(-1), z.literal(0), z.literal(1)]) })

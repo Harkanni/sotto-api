@@ -55,7 +55,8 @@ export interface RawExecutor {
 
 /**
  * Makes sure a model has its index and registry row. The first model ever used starts serving
- * at once, since there's nothing to switch from; later ones wait for a re-index (Phase 6).
+ * at once (READY), since there's nothing to switch from; a later one starts BUILDING: it covers
+ * only new files until the re-index job fills it in and swaps it in (Phase 6, ADR 0027).
  */
 export async function ensureEmbeddingIndex(
   db: RawExecutor,
@@ -65,7 +66,11 @@ export async function ensureEmbeddingIndex(
   await db.$executeRawUnsafe(hnswIndexSql(model, dims));
   await db.$executeRawUnsafe(
     `INSERT INTO "embedding_indexes" ("model", "dims", "status", "serving", "updated_at")
-     VALUES ($1, $2, 'READY', NOT EXISTS (SELECT 1 FROM "embedding_indexes" WHERE "serving"), now())
+     SELECT $1, $2,
+            CASE WHEN EXISTS (SELECT 1 FROM "embedding_indexes" WHERE "serving")
+                 THEN 'BUILDING'::"index_status" ELSE 'READY'::"index_status" END,
+            NOT EXISTS (SELECT 1 FROM "embedding_indexes" WHERE "serving"),
+            now()
      ON CONFLICT ("model") DO NOTHING`,
     model,
     dims,
@@ -107,5 +112,73 @@ export async function writeEmbeddings(
     workspaceId,
     dims,
     rows.map((r) => toVectorLiteral(r.vector)),
+  );
+}
+
+export interface IndexCoverage {
+  model: string;
+  dims: number;
+  status: 'BUILDING' | 'READY' | 'RETIRED';
+  serving: boolean;
+  /** Chunks with a vector from this model, and all chunks (of one workspace, or everywhere). */
+  embedded: number;
+  total: number;
+}
+
+/** Every embedding index with how much of the library it covers (all workspaces, or one). */
+export async function indexCoverage(
+  db: RawExecutor & { $queryRawUnsafe<T>(query: string, ...values: unknown[]): Promise<T> },
+  workspaceId?: string,
+): Promise<IndexCoverage[]> {
+  const scope = workspaceId ? `WHERE "workspace_id" = $1` : '';
+  const args = workspaceId ? [workspaceId] : [];
+  const rows = await db.$queryRawUnsafe<
+    {
+      model: string;
+      dims: number;
+      status: IndexCoverage['status'];
+      serving: boolean;
+      embedded: bigint;
+      total: bigint;
+    }[]
+  >(
+    `SELECT i."model", i."dims", i."status"::text AS status, i."serving",
+            (SELECT count(*) FROM "chunk_embeddings" e
+              WHERE e."model" = i."model" ${workspaceId ? `AND e."workspace_id" = $1` : ''}) AS embedded,
+            (SELECT count(*) FROM "chunks" ${scope}) AS total
+       FROM "embedding_indexes" i
+      ORDER BY i."serving" DESC, i."created_at" ASC`,
+    ...args,
+  );
+  return rows.map((r) => ({ ...r, embedded: Number(r.embedded), total: Number(r.total) }));
+}
+
+/** Marks a model's index BUILDING, READY or RETIRED. */
+export async function setIndexStatus(
+  db: RawExecutor,
+  model: string,
+  status: 'BUILDING' | 'READY' | 'RETIRED',
+): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "embedding_indexes" SET "status" = $2::"index_status", "updated_at" = now() WHERE "model" = $1`,
+    model,
+    status,
+  );
+}
+
+/**
+ * Makes `model` the one searches use, in one statement so there is never zero or two serving
+ * indexes; the one it replaces is RETIRED (its vectors stay until dropped on purpose).
+ */
+export async function swapServingIndex(db: RawExecutor, model: string): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "embedding_indexes"
+        SET "serving" = ("model" = $1),
+            "status" = CASE WHEN "model" = $1 THEN 'READY'::"index_status"
+                            WHEN "serving" THEN 'RETIRED'::"index_status"
+                            ELSE "status" END,
+            "updated_at" = now()
+      WHERE "serving" OR "model" = $1`,
+    model,
   );
 }

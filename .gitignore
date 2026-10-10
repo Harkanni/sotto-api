@@ -26,3 +26,6 @@ src/generated/
 
 # Redis snapshots from a local redis-server
 dump.rdb
+
+# local run logs
+*.out

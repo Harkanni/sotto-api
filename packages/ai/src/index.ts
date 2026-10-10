@@ -16,3 +16,34 @@ export {
   privateChatFrom,
   type AiSettings,
 } from './settings.js';
+export {
+  KeyVault,
+  LocalKeyWrapper,
+  VaultError,
+  keyVaultFrom,
+  type KeyWrapper,
+  type SealedKey,
+} from './vault.js';
+export {
+  AnthropicChatProvider,
+  ProviderStreamError,
+  toAnthropicMessages,
+} from './adapters/anthropic.js';
+export {
+  BYOK_PROVIDERS,
+  EndpointError,
+  byokChatProvider,
+  byokProvider,
+  checkEndpointUrl,
+  connectionErrorFor,
+  isPrivateAddress,
+  listModels,
+  testConnection,
+  type ByokCredentials,
+  type ByokProviderId,
+  type ByokProviderInfo,
+  type ConnectionErrorCode,
+  type ConnectionResult,
+  type EndpointErrorCode,
+} from './catalog.js';
+export { managedChatFrom } from './settings.js';

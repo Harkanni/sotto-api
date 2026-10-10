@@ -179,6 +179,10 @@ model Workspace {
   messages      Message[]
   citations     Citation[]
   notes         Note[]
+  aiProviders   AiProviderConfig[]
+  aiPolicy      WorkspaceAiPolicy?
+  usage         UsageEvent[]
+  subscription  Subscription?
 
   @@map("workspaces")
 }
@@ -711,4 +715,146 @@ model Lead {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("leads")
+}
+
+// ── AI modes and billing (Phase 6) ──────────────────────────────────────────────────────────
+// Private and Managed models come from the platform's config (packages/ai settings); a
+// workspace adds its own keys (BYOK) here and chooses, in its policy, which modes and models it
+// allows. Restricted content is Private-only in code, whatever these rows say.
+
+/// A workspace's own AI account (BYOK): an Anthropic, OpenAI or Google key, or any
+/// OpenAI-compatible endpoint. The key is envelope-encrypted (packages/ai vault): a random data
+/// key encrypts it, and the master key (local in dev, KMS in production) wraps the data key.
+/// The key is write-only: only its last four characters ever leave the api.
+model AiProviderConfig {
+  id           String    @id @default(cuid(2))
+  workspaceId  String    @map("workspace_id")
+  /// An adapter id from the provider catalog: "anthropic", "openai", "google", "openai-compatible".
+  provider     String
+  /// What admins call it ("Finance team's Claude key").
+  label        String
+  /// AES-256-GCM ciphertext of the key (iv | tag | ciphertext); null for keyless endpoints.
+  encryptedKey Bytes?    @map("encrypted_key")
+  /// The data key, wrapped by the master key named in `keyWrapper`.
+  wrappedDek   Bytes?    @map("wrapped_dek")
+  /// Which master key wrapped it ("local:<key id>", "kms:<key arn>"), so keys can be rotated.
+  keyWrapper   String?   @map("key_wrapper")
+  keyLast4     String?   @map("key_last4")
+  /// Only for "openai-compatible": the server's base URL, including /v1.
+  baseUrl      String?   @map("base_url")
+  /// Chat models this key may use ("claude-sonnet-4-5"); the first is its default.
+  models       String[]  @default([])
+  /// The last Test connection that passed, and the last failure as a code.
+  verifiedAt   DateTime? @map("verified_at")
+  lastError    String?   @map("last_error")
+  createdById  String?   @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("ai_provider_configs")
+}
+
+/// Where a workspace's questions may be answered (BRIEF §3). One row per workspace; a missing
+/// row means the defaults: Private only, Confidential stays Private.
+model WorkspaceAiPolicy {
+  workspaceId       String    @id @map("workspace_id")
+  allowedModes      AiRoute[] @default([PRIVATE]) @map("allowed_modes")
+  defaultMode       AiRoute   @default(PRIVATE) @map("default_mode")
+  /// A model reference from the catalog ("private:ollama:llama3.2:3b",
+  /// "byok:<config id>:claude-sonnet-4-5", "managed:anthropic:claude-…"); null = the mode's first.
+  defaultModel      String?   @map("default_model")
+  /// Modes besides Private allowed to read Confidential sources. Restricted is never listed:
+  /// it is Private-only in code.
+  confidentialModes AiRoute[] @default([]) @map("confidential_modes")
+  /// Catalog models an admin turned off for this workspace.
+  disabledModels    String[]  @default([]) @map("disabled_models")
+  updatedById       String?   @map("updated_by_id")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_ai_policies")
+}
+
+enum UsageKind {
+  AI_INPUT_TOKENS
+  AI_OUTPUT_TOKENS
+  TRANSCRIPTION_SECONDS
+  /// A change in stored bytes (+ on upload, - on permanent delete); the sum is what's stored.
+  STORAGE_BYTES
+
+  @@map("usage_kind")
+}
+
+/// Metering (BRIEF §4 Billing): one row per thing used. Quotas and the usage charts sum these;
+/// never content, only quantities.
+model UsageEvent {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  userId      String?   @map("user_id")
+  kind        UsageKind
+  quantity    BigInt
+  route       AiRoute?
+  model       String?
+  /// What was used, when counting it twice must be impossible (a retried transcription: the
+  /// file id). Unique per kind.
+  subjectId   String?   @map("subject_id")
+  at          DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([kind, subjectId])
+  @@index([workspaceId, kind, at])
+  @@map("usage_events")
+}
+
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+  ENTERPRISE
+
+  @@map("plan")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  /// Payment failed; the plan keeps working until the period ends.
+  PAST_DUE
+  /// Cancelled; the plan keeps working until `currentPeriodEnd`, then falls back to Free.
+  CANCELLED
+
+  @@map("subscription_status")
+}
+
+/// The workspace's plan with the payment provider (ADR 0004: Paystack first). A missing row
+/// is the Free plan.
+model Subscription {
+  workspaceId      String             @id @map("workspace_id")
+  plan             Plan               @default(FREE)
+  status           SubscriptionStatus @default(ACTIVE)
+  /// "paystack", or "test" for the labelled stand-in when no provider is configured.
+  provider         String
+  /// The provider's customer and subscription references (Paystack: customer code,
+  /// subscription code); never card details.
+  customerRef      String?            @map("customer_ref")
+  externalId       String?            @map("external_id")
+  currentPeriodEnd DateTime?          @map("current_period_end")
+  updatedAt        DateTime           @default(now()) @updatedAt @map("updated_at")
+  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+/// Payment-provider webhooks already handled, so a retried delivery changes nothing twice.
+/// Not a tenant table: a webhook arrives without a session and names its own workspace.
+model BillingEvent {
+  id           String   @id
+  provider     String
+  type         String
+  /// The workspace the event named (not a tenant key: the webhook has no session).
+  forWorkspace String?  @map("workspace_id")
+  receivedAt   DateTime @default(now()) @map("received_at")
+
+  @@map("billing_events")
 }

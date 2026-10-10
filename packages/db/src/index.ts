@@ -3,7 +3,9 @@ import { PrismaClient } from './generated/prisma/client.js';
 
 export { PrismaClient, Prisma } from './generated/prisma/client.js';
 export type {
+  AiProviderConfig,
   AuditLog,
+  BillingEvent,
   Chunk,
   Citation,
   Collection,
@@ -20,8 +22,11 @@ export type {
   Session,
   Transcript,
   TranscriptSegment,
+  Subscription,
+  UsageEvent,
   User,
   Workspace,
+  WorkspaceAiPolicy,
 } from './generated/prisma/client.js';
 export {
   Access,
@@ -33,8 +38,11 @@ export {
   InviteStatus,
   MessageRole,
   MessageStatus,
+  Plan,
   Role,
   Sensitivity,
+  SubscriptionStatus,
+  UsageKind,
 } from './generated/prisma/enums.js';
 export {
   assertModelId,
@@ -42,7 +50,11 @@ export {
   hnswIndexSql,
   indexNameFor,
   toVectorLiteral,
+  indexCoverage,
+  setIndexStatus,
+  swapServingIndex,
   writeEmbeddings,
+  type IndexCoverage,
   type EmbeddingRow,
   type RawExecutor,
 } from './vectors.js';

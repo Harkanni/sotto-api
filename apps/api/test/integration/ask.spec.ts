@@ -1,6 +1,6 @@
 import type { ChatMessage, ChatProvider, ChatRequest, DataLocation } from '@sotto/ai';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AiService, type AskChat, routeLabelOf, routeOf } from '../../src/ask/ai.service.js';
+import { AiSettingsService } from '../../src/ai/ai-settings.service.js';
 import { FOLLOW_UPS } from '../../src/ask/answer.js';
 import { withDatabase } from './harness.js';
 import { Kestrel, type Who } from './kestrel.js';
@@ -81,24 +81,37 @@ function parseEvents(text: string): Event[] {
 
 describe.skipIf(withDatabase)('ask', () => {
   const k = new Kestrel('ask.example');
-  let ai: AiService;
   const chat = {
     inCluster: new ScriptedChat('IN_CLUSTER'),
     outside: new ScriptedChat('THIRD_PARTY'),
   };
 
-  function useChat(provider: ScriptedChat | null) {
-    const value: AskChat | null = provider
-      ? {
-          provider,
-          model: 'scripted-1',
-          route: routeOf(provider.dataLocation),
-          routeLabel: routeLabelOf(provider),
-          dataLocation: provider.dataLocation,
-          isMock: false,
-        }
-      : null;
-    (ai as { chat: AskChat | null }).chat = value;
+  /**
+   * Which model answers: an in-cluster one as the platform's Private model, an outside one as
+   * the platform's Managed model with the workspace allowing Managed (the real Phase 6 path), or
+   * none (passages only).
+   */
+  async function useChat(provider: ScriptedChat | null) {
+    const settings = k.t.app.get(AiSettingsService);
+    await k.db.workspaceAiPolicy.deleteMany({ where: { workspaceId: k.workspaceId } });
+    if (!provider) return settings.usePlatformChats(null, null);
+    if (provider.dataLocation === 'IN_CLUSTER') {
+      return settings.usePlatformChats({ provider, model: 'scripted-1' }, null);
+    }
+    settings.usePlatformChats(null, { provider, models: ['scripted-1'] });
+    // Managed AI is a Pro feature.
+    await k.db.subscription.upsert({
+      where: { workspaceId: k.workspaceId },
+      create: { workspaceId: k.workspaceId, plan: 'PRO', provider: 'test' },
+      update: {},
+    });
+    await k.db.workspaceAiPolicy.create({
+      data: {
+        workspaceId: k.workspaceId,
+        allowedModes: ['PRIVATE', 'MANAGED'],
+        defaultMode: 'MANAGED',
+      },
+    });
   }
 
   async function newChat(who: Who, scope = {}) {
@@ -125,13 +138,12 @@ describe.skipIf(withDatabase)('ask', () => {
   beforeAll(async () => {
     process.env.ASK_RATE_PER_MINUTE = '1000';
     await k.start();
-    ai = k.t.app.get(AiService);
     await k.seedLibrary();
   });
   afterAll(() => k.stop());
 
   it('streams an answer with renumbered citations and follow-ups, and saves it', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = (p) =>
       `Offline recording is a launch requirement ${cite(p, 'Weekly product sync')}. Business is priced per seat ${cite(p, 'Pricing review notes')}.\n${FOLLOW_UPS}\nWho owns offline recording?\nWhen is the beta?`;
     const id = await newChat('tunde');
@@ -160,7 +172,7 @@ describe.skipIf(withDatabase)('ask', () => {
     expect(final).toMatchObject({
       status: 'done',
       content: streamed,
-      model: 'scripted-1',
+      model: 'private:scripted:scripted-1',
       route: { kind: 'private', label: 'Private · Scripted model' },
       notFound: false,
       followUps: ['Who owns offline recording?', 'When is the beta?'],
@@ -187,7 +199,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('never lets a viewer’s answer draw on a collection they can’t open', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.prompts = [];
     chat.inCluster.reply = (p) =>
       `Here is what I found ${sourcesIn(p)
@@ -208,7 +220,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('keeps Restricted and Confidential from an outside model, and says how many', async () => {
-    useChat(chat.outside);
+    await useChat(chat.outside);
     chat.outside.prompts = [];
     chat.outside.reply = (p) =>
       sourcesIn(p).length ? `Found ${cite(p, sourcesIn(p)[0]!)}.` : 'Nothing.';
@@ -227,7 +239,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('answers with the matching passages, labelled, when no model is configured', async () => {
-    useChat(null);
+    await useChat(null);
     const { events, final } = await ask(
       'ada',
       await newChat('ada'),
@@ -248,7 +260,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('says so instead of guessing when nothing matches, without calling the model', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     const before = chat.inCluster.prompts.length;
     const { final } = await ask('ada', await newChat('ada'), 'What is the office wifi password?');
     expect(final).toMatchObject({ notFound: true, citations: [], content: '' });
@@ -256,7 +268,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('marks an answer with no citations as not found', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = () => 'The sources don’t say who the CEO is.';
     const { final } = await ask('ada', await newChat('ada'), 'Who is the pricing CEO?');
     expect(final).toMatchObject({
@@ -266,7 +278,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('answers within a scope, and refuses a scope the person can’t open', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = (p) =>
       `Scoped ${sourcesIn(p)
         .map((_, i) => `[${i + 1}]`)
@@ -283,7 +295,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('keeps chats private to the person who started them', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     const id = await newChat('tunde');
     await ask('tunde', id, 'offline recording');
     await k.people.ada.get(`/api/v1/conversations/${id}`).expect(404);
@@ -298,7 +310,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('lists and searches chats, newest first, with a preview', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = (p) => `Encrypted at rest ${cite(p, 'Security answers')}.`;
     const id = await newChat('kofi');
     await ask('kofi', id, 'Are files encrypted?');
@@ -320,7 +332,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('regenerates an answer in place, takes feedback, deletes a chat', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = (p) => `First ${cite(p, 'Security answers')}.`;
     const id = await newChat('ada');
     const first = (await ask('ada', id, 'encrypted files TLS')).final!;
@@ -353,7 +365,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('stops an answer part-way and keeps what arrived', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.delayMs = 15;
     chat.inCluster.reply = (p) => `${'Long answer '.repeat(80)}${cite(p, 'Security answers')}.`;
     try {
@@ -385,7 +397,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('saves a failed answer with a reason, and never falls back to another model', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = () => Object.assign(new TypeError('fetch failed'));
     const outsideCalls = chat.outside.prompts.length;
     const id = await newChat('ada');
@@ -403,7 +415,7 @@ describe.skipIf(withDatabase)('ask', () => {
   });
 
   it('hides a cited source once the person can no longer open it', async () => {
-    useChat(chat.inCluster);
+    await useChat(chat.inCluster);
     chat.inCluster.reply = (p) => `Seats ${cite(p, 'Pricing review notes')}.`;
     const id = await newChat('kofi');
     const { final } = await ask('kofi', id, 'pricing per seat');

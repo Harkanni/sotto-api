@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput & sleep 5 && node --watch-path=dist --env-file-if-exists=../../.env dist/main.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reindex": "node dist/reindex-cli.js"
   },
   "dependencies": {
     "@sotto/ai": "workspace:*",
