@@ -16,3 +16,11 @@ export {
   privateChatFrom,
   type AiSettings,
 } from './settings.js';
+export {
+  KeyVault,
+  LocalKeyWrapper,
+  VaultError,
+  keyVaultFrom,
+  type KeyWrapper,
+  type SealedKey,
+} from './vault.js';

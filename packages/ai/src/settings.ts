@@ -31,6 +31,10 @@ export const aiEnv = z.object({
   AI_OPENAI_COMPATIBLE_KEY: optional,
   /** Who runs that server: in your cluster, or a third party (then Restricted never goes). */
   AI_OPENAI_COMPATIBLE_LOCATION: z.enum(['IN_CLUSTER', 'THIRD_PARTY']).default('IN_CLUSTER'),
+  /** Master key for workspace API keys (32 bytes, base64). Unset → BYOK keys can't be saved. */
+  AI_KEYS_MASTER: optional,
+  /** Older master keys, comma separated, kept only to open keys wrapped before a rotation. */
+  AI_KEYS_MASTER_PREVIOUS: optional,
 });
 export type AiSettings = z.infer<typeof aiEnv>;
 
