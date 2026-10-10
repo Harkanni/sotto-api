@@ -125,6 +125,20 @@ pipeline {
   post {
     always {
       sh 'docker compose -f compose.deps.yaml down -v || true'
+    }
+    // Email on failure and when a broken branch is fixed. Recipients and SMTP live in
+    // Jenkins (Manage Jenkins > System > Extended E-mail Notification), not in this repo.
+    failure {
+      emailext to: '$DEFAULT_RECIPIENTS',
+        subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: "The ${env.BRANCH_NAME} build failed at commit ${env.GIT_COMMIT}.\n\nLog: ${env.BUILD_URL}console"
+    }
+    fixed {
+      emailext to: '$DEFAULT_RECIPIENTS',
+        subject: "Fixed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: "The ${env.BRANCH_NAME} build is green again.\n\n${env.BUILD_URL}"
+    }
+    cleanup {
       cleanWs()
     }
   }
