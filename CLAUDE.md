@@ -94,7 +94,10 @@ dependency change: push, wait for the `sync` job (it also commits the lockfile),
 - Work in progress lives on a pushed branch with a draft PR whose description is a checklist.
   Checkpoint after every logically complete task: checks, phase log, commit, push.
 - Before each commit, read the diff for accidental changes and secrets. Only `.env.example` is
-  committed. CI reaches AWS with access keys stored as GitHub secrets (ADR 0007); don't
-  reintroduce OIDC.
+  committed.
+- **CI/CD runs on Jenkins** (ADR 0023): `Jenkinsfile` runs the checks on every branch and PR and,
+  on `main`, builds the arm64 images, pushes them to ECR and deploys the demo. GitHub Actions'
+  `ci.yml` keeps the heavy checks; `images.yml` stays only as a fallback. Change the pipeline in
+  `Jenkinsfile`. AWS access uses IAM access keys (ADR 0007); don't reintroduce OIDC.
 - API + web changes are paired PRs; this one merges first. Every PR has a companion
   `../sotto-platform/docs/STATUS.md` update.
