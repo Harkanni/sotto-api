@@ -35,6 +35,7 @@ import { AskService } from './ask.service.js';
 import {
   AnswerEvent,
   AskBody,
+  RegenerateBody,
   ConversationPage,
   ConversationSchema,
   ConversationSummary,
@@ -284,9 +285,17 @@ export class ConversationsController {
       throw new ApiException(409, 'ANSWER_IN_PROGRESS', 'Wait for the answer, or stop it first.');
     }
     await this.ask.checkRate(viewer);
+    const choice = await this.ask.chooseChat(viewer, body.model);
     const stream = openStream(req, res);
     try {
-      await this.ask.ask({ viewer, auth, conversation, question: body.content, send: stream.send });
+      await this.ask.ask({
+        viewer,
+        auth,
+        conversation,
+        question: body.content,
+        choice,
+        send: stream.send,
+      });
     } finally {
       stream.close();
     }
@@ -294,12 +303,16 @@ export class ConversationsController {
 
   @Post('messages/:id/regenerate')
   @RequireRole('viewer')
-  @ApiOperation({ summary: 'Answer the question again, replacing this answer (streamed).' })
+  @ApiOperation({
+    summary:
+      'Answer the question again, replacing this answer (streamed); optionally with another model.',
+  })
   @ApiProduces('text/event-stream')
   @ApiOkResponse({ description: 'text/event-stream', standardSchema: AnswerEvent })
   async regenerate(
     @Ctx() auth: RequestAuth,
     @Param('id', { schema: IdParam }) id: string,
+    @Body({ schema: RegenerateBody }) body: z.infer<typeof RegenerateBody>,
     @Req() req: ApiRequest,
     @Res() res: ServerResponse,
   ): Promise<void> {
@@ -309,6 +322,7 @@ export class ConversationsController {
       throw new ApiException(409, 'ANSWER_IN_PROGRESS', 'Wait for the answer, or stop it first.');
     }
     await this.ask.checkRate(viewer);
+    const choice = await this.ask.chooseChat(viewer, body?.model);
     const stream = openStream(req, res);
     try {
       await this.ask.ask({
@@ -316,6 +330,7 @@ export class ConversationsController {
         auth,
         conversation: message.conversation,
         again: message,
+        choice,
         send: stream.send,
       });
     } finally {

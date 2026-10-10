@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ProviderHttpError } from '@sotto/ai';
+import { ProviderHttpError, partitionSources } from '@sotto/ai';
 import {
   type Citation,
   type Conversation,
@@ -16,7 +16,12 @@ import type { RequestAuth } from '../common/request.js';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { PrismaService, RedisService } from '../core.module.js';
 import { fileVisibleTo } from '../files/access.js';
-import { AiService, type AskChat } from './ai.service.js';
+import {
+  AiSettingsService,
+  type Policy,
+  type ResolvedChat,
+  sensitivitiesFor,
+} from '../ai/ai-settings.service.js';
 import {
   CitationStream,
   FollowUpSplitter,
@@ -45,6 +50,10 @@ const QUOTE_CHARS = 1_200;
 export const ASK_ERRORS: Record<string, string> = {
   chat_unavailable:
     'The model that answers questions isn’t responding. Nothing was sent anywhere else. Try again in a moment.',
+  key_rejected:
+    'The provider refused this workspace’s API key. Nothing was sent anywhere else. An admin can check the key in AI settings.',
+  provider_limited:
+    'The provider is limiting requests right now. Nothing was sent anywhere else. Try again in a minute.',
   chat_failed: 'The answer stopped part-way. Try again.',
   interrupted: 'This answer was interrupted. Ask again to get a full answer.',
 };
@@ -72,7 +81,7 @@ export class AskService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AiService) private readonly ai: AiService,
+    @Inject(AiSettingsService) private readonly settings: AiSettingsService,
     @Inject(RetrievalService) private readonly retrieval: RetrievalService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(RedisService) redis: RedisService,
@@ -117,6 +126,20 @@ export class AskService {
   }
 
   /**
+   * Which chat answers: the one picked (Switch model), else the workspace's default, else none
+   * (passages only). Runs before the stream opens, so a model that can't be used is a plain 409,
+   * never a quiet swap for another one (ADR 0020).
+   */
+  async chooseChat(
+    viewer: Viewer,
+    model?: string | undefined,
+  ): Promise<{ chat: ResolvedChat | null; policy: Policy }> {
+    const policy = await this.settings.policy(viewer.workspaceId);
+    const ref = model ?? (await this.settings.usableModels(viewer.workspaceId)).defaultRef;
+    return { chat: ref ? await this.settings.resolve(viewer.workspaceId, ref) : null, policy };
+  }
+
+  /**
    * Asks `question` in `conversation` (or answers it again, replacing `again`), streaming
    * events to `send` while the browser listens. Resolves when the answer is saved.
    */
@@ -126,11 +149,12 @@ export class AskService {
     conversation: Conversation;
     question?: string;
     again?: Message;
+    choice: { chat: ResolvedChat | null; policy: Policy };
     send: Send;
   }): Promise<void> {
     const { viewer, conversation, send } = input;
+    const { chat, policy } = input.choice;
     const db = this.db(viewer.workspaceId);
-    const chat = this.ai.chat;
     const scope = storedScope(conversation.scope);
     const earlier = await db.message.findMany({
       where: {
@@ -152,7 +176,7 @@ export class AskService {
     }
 
     const route = chat
-      ? { model: chat.model, route: chat.route, routeLabel: chat.routeLabel, isMock: chat.isMock }
+      ? { model: chat.ref, route: chat.route, routeLabel: chat.routeLabel, isMock: chat.isMock }
       : { model: 'none', route: null, routeLabel: 'Passages only · no AI model', isMock: false };
     const { asked, answer } = await tenantTransaction(db, async (tx) => {
       const asked = input.again
@@ -217,7 +241,17 @@ export class AskService {
     const controller = new AbortController();
     this.running.set(answer.id, controller);
     try {
-      await this.answer({ viewer, chat, scope, question, history, answer, controller, send });
+      await this.answer({
+        viewer,
+        chat,
+        policy,
+        scope,
+        question,
+        history,
+        answer,
+        controller,
+        send,
+      });
     } finally {
       this.running.delete(answer.id);
     }
@@ -226,7 +260,8 @@ export class AskService {
   /** Retrieval, then the model (or the passages alone), saving the result. */
   private async answer(run: {
     viewer: Viewer;
-    chat: AskChat | null;
+    chat: ResolvedChat | null;
+    policy: Policy;
     scope: AskScope;
     question: string;
     history: HistoryTurn[];
@@ -241,7 +276,7 @@ export class AskService {
       viewer,
       question: retrievalQuery(run.question, previous),
       scope: run.scope,
-      allowed: this.ai.allowedFor(chat),
+      allowed: sensitivitiesFor(chat, run.policy),
       limit: chat ? 8 : PASSAGES_ONLY,
       perFile: chat ? 3 : 2,
       signal: controller.signal,
@@ -266,7 +301,24 @@ export class AskService {
       return;
     }
 
-    const passages = found.passages;
+    // Second line of defence (the SQL is the first): every passage is checked against the
+    // route before the call. One slipping through would be a bug; it is dropped and logged.
+    const checked = partitionSources(found.passages, chat.dataLocation, {
+      confidentialAllowsThirdParty: run.policy.confidentialModes.includes(chat.route),
+    });
+    if (checked.hidden) this.log.error(`dropped ${checked.hidden} passages the route may not read`);
+    const passages = checked.allowed;
+    if (!passages.length) {
+      const done = await this.finish(db, answer.id, {
+        ...hidden,
+        status: 'DONE',
+        content: '',
+        notFound: true,
+        citations: [],
+      });
+      send({ type: 'done', answer: done });
+      return;
+    }
     const cites = new CitationStream(passages.length, (n, source) =>
       send({ type: 'cite', citation: citationOf(n, passages[source - 1]!) }),
     );
@@ -495,7 +547,11 @@ function citationRow(
 }
 
 function errorCode(error: unknown): string {
-  if (error instanceof ProviderHttpError) return 'chat_unavailable';
+  if (error instanceof ProviderHttpError) {
+    if (error.status === 401 || error.status === 403) return 'key_rejected';
+    if (error.status === 429) return 'provider_limited';
+    return 'chat_unavailable';
+  }
   if (error instanceof TypeError && /fetch/i.test(error.message)) return 'chat_unavailable';
   if (error instanceof Error && error.name === 'TimeoutError') return 'chat_unavailable';
   return 'chat_failed';

@@ -1,13 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  type ChatProvider,
-  type DataLocation,
-  type EmbeddingProvider,
-  type Sensitivity,
-  askChatFrom,
-  embeddingProviderFrom,
-} from '@sotto/ai';
-import type { AiRoute } from '@sotto/db';
+import { type EmbeddingProvider, embeddingProviderFrom } from '@sotto/ai';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { PrismaService } from '../core.module.js';
 
@@ -19,26 +11,14 @@ export interface ServingIndex {
   dims: number;
 }
 
-/** The chat that answers in Ask, and what the data-route badge says about it. */
-export interface AskChat {
-  provider: ChatProvider;
-  model: string;
-  route: AiRoute;
-  routeLabel: string;
-  dataLocation: DataLocation;
-  isMock: boolean;
-}
-
 /**
- * The AI the api calls itself: the embedding model for searching (the same one the worker
- * indexes with), and the chat model that answers in Ask. Both come from the platform settings
- * (packages/ai); Phase 6 adds workspace choices on top.
+ * The embedding model the api searches with (the same one the worker indexes with), from the
+ * platform settings. Which chat answers is the workspace's choice: `AiSettingsService` (Phase 6).
  */
 @Injectable()
 export class AiService {
   private readonly log = new Logger('ai');
   readonly embeddings: EmbeddingProvider;
-  readonly chat: AskChat | null;
   private serving: { at: number; value: ServingIndex | null } | null = null;
 
   constructor(
@@ -46,16 +26,6 @@ export class AiService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {
     this.embeddings = embeddingProviderFrom(config);
-    const chat = askChatFrom(config);
-    this.chat = chat
-      ? {
-          ...chat,
-          dataLocation: chat.provider.dataLocation,
-          route: routeOf(chat.provider.dataLocation),
-          routeLabel: routeLabelOf(chat.provider),
-          isMock: chat.provider.isMock === true,
-        }
-      : null;
   }
 
   /** The embedding model searches use (the first one indexed, until a re-index swaps it). */
@@ -100,27 +70,4 @@ export class AiService {
       return null;
     }
   }
-
-  /**
-   * Sensitivities the answering model may read (BRIEF §3): everything for an in-cluster model;
-   * for a third party, Internal only until Phase 6 makes Confidential a workspace setting.
-   * Search results aren't sent to any model, so search uses every sensitivity.
-   */
-  allowedFor(chat: AskChat | null): Sensitivity[] {
-    if (!chat || chat.dataLocation === 'IN_CLUSTER')
-      return ['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'];
-    return ['INTERNAL'];
-  }
-}
-
-export function routeOf(location: DataLocation): AiRoute {
-  // Phase 5's only outside model is the platform's own account; BYOK arrives in Phase 6.
-  return location === 'IN_CLUSTER' ? 'PRIVATE' : 'MANAGED';
-}
-
-/** "Private · Ollama (in your cluster)", "Managed · Hosted model"; mocks say so. */
-export function routeLabelOf(provider: ChatProvider): string {
-  if (provider.isMock) return 'Mock chat · no model';
-  const where = provider.dataLocation === 'IN_CLUSTER' ? 'Private' : 'Managed';
-  return `${where} · ${provider.label}`;
 }

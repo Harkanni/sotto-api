@@ -6,6 +6,7 @@ import {
   EndpointError,
   type KeyVault,
   type SealedKey,
+  type Sensitivity,
   askChatFrom,
   byokChatProvider,
   byokProvider,
@@ -70,7 +71,7 @@ export interface ResolvedChat {
 
 export type ModeAvailability = { available: true } | { available: false; reason: string };
 
-interface PlatformChat {
+export interface PlatformChat {
   provider: ChatProvider;
   model: string;
 }
@@ -110,6 +111,22 @@ function stored(sealed: SealedKey) {
   };
 }
 
+/**
+ * The sensitivities a chat may read (BRIEF §3), applied inside the retrieval SQL: everything
+ * in the cluster; outside it, Internal, plus Confidential only where the policy allows that
+ * mode. Restricted never leaves the cluster, whatever the policy says.
+ */
+export function sensitivitiesFor(
+  chat: { dataLocation: DataLocation; route: AiRoute } | null,
+  policy: Policy,
+): Sensitivity[] {
+  if (!chat || chat.dataLocation === 'IN_CLUSTER')
+    return ['INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'];
+  return policy.confidentialModes.includes(chat.route)
+    ? ['INTERNAL', 'CONFIDENTIAL']
+    : ['INTERNAL'];
+}
+
 export function routeLabelFor(mode: AiRoute, providerLabel: string, isMock: boolean): string {
   if (isMock) return 'Mock chat · no model';
   if (mode === 'PRIVATE') return `Private · ${providerLabel}`;
@@ -125,8 +142,8 @@ export function routeLabelFor(mode: AiRoute, providerLabel: string, isMock: bool
 @Injectable()
 export class AiSettingsService {
   readonly vault: KeyVault;
-  private readonly privateChat: PlatformChat | null;
-  private readonly managed: { provider: ChatProvider; models: string[] } | null;
+  private privateChat: PlatformChat | null = null;
+  private managed: { provider: ChatProvider; models: string[] } | null = null;
   private readonly allowPrivateUrls: boolean;
 
   constructor(
@@ -140,12 +157,28 @@ export class AiSettingsService {
     // Phase 5's platform chat may be a third party (AI_ASK_CHAT on a hosted API): that is
     // Sotto's own account, so it is Managed, never Private.
     if (platform && platform.provider.dataLocation === 'THIRD_PARTY') {
-      this.privateChat = null;
-      this.managed = managed ?? { provider: platform.provider, models: [platform.model] };
+      this.usePlatformChats(
+        null,
+        managed ?? { provider: platform.provider, models: [platform.model] },
+      );
     } else {
-      this.privateChat = platform;
-      this.managed = managed;
+      this.usePlatformChats(platform, managed);
     }
+  }
+
+  /**
+   * The platform's own models: Private (must run in the cluster) and Managed. Set from config
+   * at startup; tests swap in scripted models the same way.
+   */
+  usePlatformChats(
+    privateChat: PlatformChat | null,
+    managed: { provider: ChatProvider; models: string[] } | null,
+  ): void {
+    if (privateChat && privateChat.provider.dataLocation !== 'IN_CLUSTER') {
+      throw new Error('A Private model must run in the cluster');
+    }
+    this.privateChat = privateChat;
+    this.managed = managed;
   }
 
   // ── Policy ──────────────────────────────────────────────────────────
