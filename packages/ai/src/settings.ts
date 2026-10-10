@@ -75,6 +75,11 @@ function endpoint(provider: string, settings: AiSettings) {
     return {
       baseUrl: settings.AI_OPENAI_COMPATIBLE_URL,
       dataLocation: settings.AI_OPENAI_COMPATIBLE_LOCATION,
+      // The badge's words (BRIEF §3: "Private · Sotto-hosted model").
+      label:
+        settings.AI_OPENAI_COMPATIBLE_LOCATION === 'IN_CLUSTER'
+          ? 'Sotto-hosted model'
+          : 'Hosted model',
       ...(settings.AI_OPENAI_COMPATIBLE_KEY ? { apiKey: settings.AI_OPENAI_COMPATIBLE_KEY } : {}),
     };
   }
@@ -142,7 +147,8 @@ export function managedChatFrom(
     provider: byokChatProvider(
       id,
       { apiKey: settings.AI_MANAGED_KEY, baseUrl: settings.AI_MANAGED_BASE_URL },
-      info.badge,
+      // "Your server" is BYOK's word for a custom endpoint; Managed runs on Sotto's.
+      info.id === 'openai-compatible' ? 'Sotto’s hosted model' : info.badge,
     ),
     models: refs.map((r) => r.model),
   };
