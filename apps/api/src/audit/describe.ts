@@ -64,6 +64,12 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
       return `Deleted ${quote(text('name'))} for good`;
     case 'file.downloaded':
       return `Downloaded ${quote(text('name'))}`;
+    case 'note.created':
+      return `Wrote the note ${quote(text('name'))}`;
+    case 'note.edited':
+      return `Edited the note ${quote(text('name'))}`;
+    case 'ask.asked':
+      return 'Asked Sotto a question';
     default:
       return action;
   }

@@ -315,6 +315,93 @@ jobs:
         if: always()
         run: sudo chmod -R a+rX ~/whisper-models
 
+  # Phase 5's eval set with a real embedding model, so the semantic half of hybrid search is
+  # measured, not mocked: the built images on Postgres (pgvector), Redis, RabbitMQ, S3 and
+  # Ollama (nomic-embed-text, the default). The sample content is indexed by the worker, then
+  # every question in evals/kestrel.ts is searched and asked by an owner and by a viewer who
+  # can't open Board and finance. evals/score.ts decides pass or fail; the job page shows the
+  # table. No chat model here: answers are the labelled passages-only kind.
+  evals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      # The Ollama image (CUDA libraries) and the S3 store's volumes need more room than the
+      # runner leaves free: drop toolchains this job never uses (~20 GB).
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build images
+        run: |
+          docker build --build-arg APP=api -t sotto-api:ci .
+          docker build --build-arg APP=worker -t sotto-worker:ci .
+      - name: Start dependencies and the embedding model
+        run: |
+          docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
+          for i in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+            sleep 1
+          done
+          curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\n" http://localhost:8333/sotto-files
+          # Problems are written as annotations, so they show on the PR without the log.
+          fail() { echo "::error title=evals setup::$1"; docker compose -f compose.deps.yaml logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'; exit 1; }
+          # The ollama service from compose.deps.yaml (profile "ai"), on the same network.
+          # The Ollama image is large (CUDA libraries): make room after the image builds.
+          docker builder prune -af >/dev/null; df -h / | tail -1
+          docker compose -f compose.deps.yaml --profile ai up -d ollama >/tmp/ollama-up.log 2>&1 \
+            || fail "ollama did not start: $(tail -c 400 /tmp/ollama-up.log | tr '\n\r' '  ')"
+          for i in $(seq 1 60); do curl -fsS localhost:11434/api/version >/dev/null && break; sleep 1; done
+          curl -fsS localhost:11434/api/version || fail "ollama is not answering on 11434"
+          # ~275 MB, pulled over Ollama's HTTP API (the last line of its progress says success).
+          curl -fsS localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' | tail -1 \
+            || fail "could not pull nomic-embed-text"
+          curl -fsS localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' \
+            | head -c 80 || fail "nomic-embed-text does not embed"
+      - name: Migrate and start the api and worker
+        env:
+          NET: sotto-deps_default
+          DB: postgresql://sotto:sotto@postgres:5432/sotto
+          MQ: amqp://sotto:sotto@rabbitmq:5672
+        run: |
+          S3="-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci"
+          AI="-e AI_EMBEDDINGS=ollama:nomic-embed-text -e OLLAMA_URL=http://ollama:11434"
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
+          docker run -d --name api --network $NET -p 4000:4000 $S3 $AI \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off -e ASK_RATE_PER_MINUTE=1000 sotto-api:ci
+          docker run -d --name worker --network $NET -p 4100:4100 $S3 $AI -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 sotto-worker:ci
+          for i in $(seq 1 90); do
+            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null && exit 0
+            sleep 2
+          done
+          for c in api worker; do docker logs $c 2>&1 | tail -15 | sed "s/^/::error title=$c::/"; done
+          exit 1
+      - name: Run the eval set
+        env:
+          API_URL: http://localhost:4000
+          MAILPIT_URL: http://localhost:8025
+        run: |
+          # On failure, the services' last lines become annotations (the PR shows them).
+          node scripts/eval.ts && status=0 || status=$?
+          # The real model's similarities, which the relevance floor is set from (a notice).
+          OLLAMA_URL=http://localhost:11434 node scripts/eval-similarity.ts || true
+          [ "$status" = 0 ] && exit 0
+          df -h / | tail -1 | sed 's/^/::error title=disk::/'
+          for c in api worker; do docker logs $c 2>&1 | grep -i -E 'error|warn' | tail -8 | sed "s/^/::error title=$c::/"; done
+          docker compose -f compose.deps.yaml logs s3 2>&1 | tail -8 | sed 's/^/::error title=s3::/'
+          exit 1
+      - name: Service logs
+        if: always()
+        run: |
+          for c in api worker; do echo "::group::$c"; docker logs $c 2>&1 | tail -200; echo "::endgroup::"; done
+
   secrets:
     runs-on: ubuntu-24.04
     steps:

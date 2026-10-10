@@ -2140,6 +2140,637 @@
           "events"
         ]
       }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "SearchController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "collection",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "documents",
+                "meetings"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search files, passages and meeting moments (hybrid, ranked).",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/notes": {
+      "post": {
+        "operationId": "NotesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNote"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Write a note. It is indexed like a document and can be cited.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/v1/notes/{id}": {
+      "get": {
+        "operationId": "NotesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A note’s text as written (Markdown), for reading and editing.",
+        "tags": [
+          "notes"
+        ]
+      },
+      "patch": {
+        "operationId": "NotesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNote"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Note"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Edit a note’s title or text. The text is indexed again.",
+        "tags": [
+          "notes"
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "post": {
+        "operationId": "ConversationsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start a chat with a scope (the whole workspace by default).",
+        "tags": [
+          "ask"
+        ]
+      },
+      "get": {
+        "operationId": "ConversationsController_list",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 500
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Your chats, most recent first; `q` searches titles and messages.",
+        "tags": [
+          "ask"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "ConversationsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One of your chats, with every message and its sources.",
+        "tags": [
+          "ask"
+        ]
+      },
+      "patch": {
+        "operationId": "ConversationsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Rename a chat or change where its answers come from.",
+        "tags": [
+          "ask"
+        ]
+      },
+      "delete": {
+        "operationId": "ConversationsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete one of your chats and everything in it.",
+        "tags": [
+          "ask"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "post": {
+        "operationId": "ConversationsController_askIn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "text/event-stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEvent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Ask a question in a chat. The answer streams back as Server-Sent Events: `start`, `cite` (each source as first cited), `token`, then `done` or `error` (AnswerEvent).",
+        "tags": [
+          "ask"
+        ]
+      }
+    },
+    "/api/v1/messages/{id}/regenerate": {
+      "post": {
+        "operationId": "ConversationsController_regenerate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEvent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Answer the question again, replacing this answer (streamed).",
+        "tags": [
+          "ask"
+        ]
+      }
+    },
+    "/api/v1/messages/{id}/stop": {
+      "post": {
+        "operationId": "ConversationsController_stop",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stop an answer while it’s being written; what arrived is kept.",
+        "tags": [
+          "ask"
+        ]
+      }
+    },
+    "/api/v1/messages/{id}/feedback": {
+      "post": {
+        "operationId": "ConversationsController_feedback",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "feedback": {
+                      "nullable": true,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "feedback"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Rate an answer: 1 (helpful), -1 (not helpful) or 0 (clear).",
+        "tags": [
+          "ask"
+        ]
+      }
     }
   },
   "info": {
@@ -2833,7 +3464,10 @@
               "file.trashed",
               "file.restored",
               "file.deleted",
-              "file.downloaded"
+              "file.downloaded",
+              "note.created",
+              "note.edited",
+              "ask.asked"
             ]
           },
           "summary": {
@@ -3172,7 +3806,8 @@
           "upload",
           "recording",
           "sample",
-          "import"
+          "import",
+          "written"
         ]
       },
       "FileStatus": {
@@ -3637,6 +4272,764 @@
           ],
           "additionalProperties": false
         }
+      },
+      "SearchResults": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "keyword"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "$ref": "#/components/schemas/File"
+                },
+                "match": {
+                  "type": "string",
+                  "enum": [
+                    "title",
+                    "content"
+                  ]
+                }
+              },
+              "required": [
+                "file",
+                "match"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "passages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rank": {
+                  "type": "number"
+                },
+                "chunkId": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "document",
+                        "audio",
+                        "note"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "page": {
+                  "nullable": true,
+                  "type": "number"
+                },
+                "snippet": {
+                  "$ref": "#/components/schemas/Snippet"
+                }
+              },
+              "required": [
+                "rank",
+                "chunkId",
+                "file",
+                "page",
+                "snippet"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "moments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rank": {
+                  "type": "number"
+                },
+                "chunkId": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "document",
+                        "audio",
+                        "note"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                "startMs": {
+                  "type": "number"
+                },
+                "endMs": {
+                  "type": "number"
+                },
+                "snippet": {
+                  "$ref": "#/components/schemas/Snippet"
+                }
+              },
+              "required": [
+                "rank",
+                "chunkId",
+                "file",
+                "startMs",
+                "endMs",
+                "snippet"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "mode",
+          "files",
+          "passages",
+          "moments"
+        ],
+        "additionalProperties": false
+      },
+      "Snippet": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "required": [
+          "text",
+          "highlights"
+        ],
+        "additionalProperties": false
+      },
+      "CreateNote": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "collectionId": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "sensitivity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Sensitivity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "Note": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/File"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateNote": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          }
+        }
+      },
+      "CreateConversation": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "default": {},
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskScope"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        }
+      },
+      "AskScope": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "nullable": true,
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "fileIds": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "documents",
+              "meetings"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "Conversation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AskScope"
+          },
+          "preview": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scope",
+          "preview",
+          "createdAt",
+          "updatedAt",
+          "messages"
+        ],
+        "additionalProperties": false
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "streaming",
+              "done",
+              "stopped",
+              "failed"
+            ]
+          },
+          "model": {
+            "nullable": true,
+            "type": "string"
+          },
+          "route": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "kind": {
+                "nullable": true,
+                "type": "string",
+                "enum": [
+                  "private",
+                  "byok",
+                  "managed"
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ],
+            "additionalProperties": false
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "passagesOnly": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "object",
+            "properties": {
+              "restricted": {
+                "type": "number"
+              },
+              "confidential": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "restricted",
+              "confidential"
+            ],
+            "additionalProperties": false
+          },
+          "notFound": {
+            "type": "boolean"
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          },
+          "feedback": {
+            "nullable": true,
+            "type": "number"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "status",
+          "model",
+          "route",
+          "isMock",
+          "passagesOnly",
+          "hidden",
+          "notFound",
+          "followUps",
+          "error",
+          "feedback",
+          "citations",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "Citation": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "number"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "fileId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "nullable": true,
+            "type": "string",
+            "enum": [
+              "document",
+              "audio",
+              "note"
+            ]
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "page": {
+            "nullable": true,
+            "type": "number"
+          },
+          "startMs": {
+            "nullable": true,
+            "type": "number"
+          },
+          "endMs": {
+            "nullable": true,
+            "type": "number"
+          },
+          "quote": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "n",
+          "available",
+          "fileId",
+          "kind",
+          "title",
+          "page",
+          "startMs",
+          "endMs",
+          "quote"
+        ],
+        "additionalProperties": false
+      },
+      "ConversationPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationSummary"
+            }
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "additionalProperties": false
+      },
+      "ConversationSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AskScope"
+          },
+          "preview": {
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "scope",
+          "preview",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "UpdateConversation": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "scope": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AskScope"
+              }
+            ]
+          }
+        }
+      },
+      "AskBody": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "AnswerEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "start"
+                ]
+              },
+              "conversationId": {
+                "type": "string"
+              },
+              "question": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                ]
+              },
+              "answer": {
+                "$ref": "#/components/schemas/Message"
+              }
+            },
+            "required": [
+              "type",
+              "conversationId",
+              "question",
+              "answer"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "cite"
+                ]
+              },
+              "citation": {
+                "$ref": "#/components/schemas/Citation"
+              }
+            },
+            "required": [
+              "type",
+              "citation"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "token"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              },
+              "answer": {
+                "$ref": "#/components/schemas/Message"
+              }
+            },
+            "required": [
+              "type",
+              "answer"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "FeedbackBody": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  -1
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "value"
+        ]
       }
     }
   }

@@ -258,6 +258,10 @@ export async function onFileUploaded(deps: Deps, msg: FileUploaded): Promise<voi
     PagesDocument.parse({ pages: extracted.pages }),
   );
   await index(deps, db, file, chunkPages(extracted.pages, { paged: extracted.paged }));
+  // A note edited while this job ran is back at UPLOADED with a newer job queued: that job
+  // indexes the new text, so this one mustn't mark the file Ready over it.
+  const current = await db.file.findUnique({ where: { id: file.id }, select: { status: true } });
+  if (current?.status !== 'INDEXING') return;
   await setStatus(deps, db, file, 'READY', {
     pageCount: extracted.paged ? extracted.pages.length : null,
     checksum,

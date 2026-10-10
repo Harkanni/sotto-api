@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AskModule } from './ask/ask.module.js';
 import { AuditApiModule } from './audit/audit.controller.js';
 import { AuditModule } from './audit/audit.service.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -30,6 +31,7 @@ import { WorkspacesModule } from './workspaces/workspaces.controller.js';
     OnboardingModule,
     FilesModule,
     EventsModule,
+    AskModule,
   ],
 })
 export class AppModule {}

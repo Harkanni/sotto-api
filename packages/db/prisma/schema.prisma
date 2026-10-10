@@ -69,6 +69,7 @@ model User {
   auditEntries  AuditLog[]
   files         File[]
   positions     PlaybackPosition[]
+  conversations Conversation[]
 
   @@map("users")
 }
@@ -149,31 +150,35 @@ model Passkey {
 
 /// Better Auth's "organization".
 model Workspace {
-  id           String                 @id @default(cuid(2))
-  name         String
+  id            String                 @id @default(cuid(2))
+  name          String
   /// Required by Better Auth; never used in URLs (the workspace comes from the session).
-  slug         String                 @unique
-  logo         String?
+  slug          String                 @unique
+  logo          String?
   /// JSON text owned by the API, e.g. the sample collections loaded during onboarding.
-  metadata     String?
-  createdAt    DateTime               @default(now()) @map("created_at")
-  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
-  memberships  Membership[]
-  invites      Invite[]
-  sessions     Session[]
-  collections  Collection[]
-  grants       CollectionPermission[]
-  auditLog     AuditLog[]
-  files        File[]
-  transcripts  Transcript[]
-  segments     TranscriptSegment[]
-  insights     MeetingInsights[]
-  positions    PlaybackPosition[]
-  chunks       Chunk[]
-  embeddings   ChunkEmbedding[]
-  integrations Integration[]
-  retention    RetentionPolicy[]
-  legalHolds   LegalHold[]
+  metadata      String?
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @default(now()) @updatedAt @map("updated_at")
+  memberships   Membership[]
+  invites       Invite[]
+  sessions      Session[]
+  collections   Collection[]
+  grants        CollectionPermission[]
+  auditLog      AuditLog[]
+  files         File[]
+  transcripts   Transcript[]
+  segments      TranscriptSegment[]
+  insights      MeetingInsights[]
+  positions     PlaybackPosition[]
+  chunks        Chunk[]
+  embeddings    ChunkEmbedding[]
+  integrations  Integration[]
+  retention     RetentionPolicy[]
+  legalHolds    LegalHold[]
+  conversations Conversation[]
+  messages      Message[]
+  citations     Citation[]
+  notes         Note[]
 
   @@map("workspaces")
 }
@@ -295,6 +300,8 @@ enum FileSource {
   RECORDING
   SAMPLE
   IMPORT
+  /// Written in Sotto: a new note, or an answer saved as a note (Phase 5).
+  WRITTEN
 
   @@map("file_source")
 }
@@ -347,6 +354,8 @@ model File {
   insights      MeetingInsights?
   chunks        Chunk[]
   positions     PlaybackPosition[]
+  note          Note?
+  citations     Citation[]
 
   @@index([workspaceId, deletedAt, createdAt(sort: Desc)])
   @@index([workspaceId, collectionId])
@@ -461,6 +470,7 @@ model Chunk {
   workspace    Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   file         File                     @relation(fields: [fileId], references: [id], onDelete: Cascade)
   embeddings   ChunkEmbedding[]
+  citations    Citation[]
 
   @@unique([fileId, idx])
   @@index([workspaceId, collectionId, sensitivity])
@@ -503,6 +513,122 @@ model EmbeddingIndex {
   updatedAt DateTime    @default(now()) @updatedAt @map("updated_at")
 
   @@map("embedding_indexes")
+}
+
+// ── Chat (Phase 5) ──────────────────────────────────────────────────────────────────────────
+
+enum MessageRole {
+  USER
+  ASSISTANT
+
+  @@map("message_role")
+}
+
+/// An answer is saved as it starts, so a dropped connection or a reload never loses it.
+enum MessageStatus {
+  STREAMING
+  DONE
+  /// Stopped by the person asking; `content` holds what had arrived.
+  STOPPED
+  FAILED
+
+  @@map("message_status")
+}
+
+/// One chat. Private to the person who started it: nobody else, admins included, can read it.
+model Conversation {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  title       String    @default("")
+  /// Where answers come from: `AskScope` in apps/api/src/ask/scope.ts (workspace, a
+  /// collection, or picked files).
+  scope       Json
+  createdAt   DateTime  @default(now()) @map("created_at")
+  /// Bumped by every question, so the list shows the most recent chats first.
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@index([workspaceId, userId, updatedAt(sort: Desc)])
+  @@map("conversations")
+}
+
+model Message {
+  id                 String        @id @default(cuid(2))
+  workspaceId        String        @map("workspace_id")
+  conversationId     String        @map("conversation_id")
+  role               MessageRole
+  /// The question, or the answer with its citations as [n] (numbered by first use).
+  content            String        @default("")
+  status             MessageStatus @default(DONE)
+  /// "provider:model" that answered; "none" when no chat model is configured (passages only).
+  model              String?
+  /// Where the model ran (the data-route badge); its label as shown when it answered.
+  route              AiRoute?
+  routeLabel         String?       @map("route_label")
+  isMock             Boolean       @default(false) @map("is_mock")
+  /// Sources the route wasn't allowed to read, counted, never read ("2 restricted sources
+  /// hidden").
+  hiddenRestricted   Int           @default(0) @map("hidden_restricted")
+  hiddenConfidential Int           @default(0) @map("hidden_confidential")
+  /// The sources didn't hold the answer; the reply says so instead of guessing.
+  notFound           Boolean       @default(false) @map("not_found")
+  followUps          String[]      @default([]) @map("follow_ups")
+  /// A failure as a code ("chat_unavailable"), never content.
+  error              String?
+  inputTokens        Int?          @map("input_tokens")
+  outputTokens       Int?          @map("output_tokens")
+  /// -1, 0 or 1 from the person asking.
+  feedback           Int?
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at")
+  workspace          Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation       Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations          Citation[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+/// A numbered source of an answer. The passage and title are kept as they were, but they're
+/// only shown while the person can still open the file (checked on every read).
+model Citation {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  messageId   String    @map("message_id")
+  n           Int
+  chunkId     String?   @map("chunk_id")
+  fileId      String?   @map("file_id")
+  title       String
+  page        Int?
+  startMs     Int?      @map("start_ms")
+  endMs       Int?      @map("end_ms")
+  quote       String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chunk       Chunk?    @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  file        File?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@unique([messageId, n])
+  @@index([fileId])
+  @@map("citations")
+}
+
+/// The text of a note (a File of kind NOTE). The body is also stored as the file's original
+/// (Markdown), so notes go through the same pipeline as documents and are searchable and citable.
+model Note {
+  id          String    @id @default(cuid(2))
+  workspaceId String    @map("workspace_id")
+  fileId      String    @unique @map("file_id")
+  body        String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  file        File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
 }
 
 // ── Next (BRIEF §4): the tables exist so the model is settled; nothing reads or writes them ──
