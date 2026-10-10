@@ -13,9 +13,10 @@ export const API_PREFIX = 'api/v1';
 /**
  * Better Auth reads the raw request body itself, so Nest's own body parser stays off and
  * configureApp() adds the JSON parser after the auth handler. Every place that creates the app
- * (main.ts, the OpenAPI script, tests) passes these options.
+ * (main.ts, the OpenAPI script, tests) passes these options. `rawBody` keeps each JSON body's
+ * exact bytes on `req.rawBody`, because a payment webhook's signature is over those bytes.
  */
-export const APP_OPTIONS = { bodyParser: false } as const;
+export const APP_OPTIONS = { bodyParser: false, rawBody: true } as const;
 
 /** Shared by main.ts, the OpenAPI script and tests, so all three see the same routes. */
 export function configureApp(app: INestApplication): void {

@@ -80,6 +80,12 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
       return `Renamed the key ${quote(text('from'))} to ${quote(text('to'))}`;
     case 'ai.key_removed':
       return `Removed the ${text('provider')} key ${quote(text('name'))}`;
+    case 'billing.plan_changed':
+      return `Changed the plan to ${text('to')}${m.test ? ' (test checkout)' : ''}`;
+    case 'billing.payment_failed':
+      return `A ${text('plan')} payment failed`;
+    case 'billing.cancelled':
+      return `Cancelled the ${text('plan')} plan`;
     case 'ask.asked':
       return 'Asked Sotto a question';
     default:

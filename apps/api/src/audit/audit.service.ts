@@ -41,12 +41,22 @@ export const AUDIT_ACTIONS = [
   'ai.key_replaced',
   'ai.key_renamed',
   'ai.key_removed',
+  'billing.plan_changed',
+  'billing.payment_failed',
+  'billing.cancelled',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export type AuditTarget =
-  'workspace' | 'member' | 'invite' | 'collection' | 'audit' | 'file' | 'conversation';
+  | 'workspace'
+  | 'member'
+  | 'invite'
+  | 'collection'
+  | 'audit'
+  | 'file'
+  | 'conversation'
+  | 'subscription';
 
 export interface AuditEntry {
   action: AuditAction;
@@ -79,6 +89,27 @@ export class AuditService {
           targetType: entry.target.type,
           targetId: entry.target.id ?? null,
           ip: by.ip,
+          ...(entry.meta ? { meta: entry.meta } : {}),
+        },
+      });
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      this.log.error(
+        `could not record ${entry.action} (${typeof code === 'string' ? code : 'error'})`,
+      );
+    }
+  }
+  /** An entry with no person behind it (a payment provider's webhook): shown as "Sotto". */
+  async recordSystem(workspaceId: string, entry: AuditEntry): Promise<void> {
+    try {
+      await forWorkspace(this.prisma.client, workspaceId).auditLog.create({
+        data: {
+          workspaceId,
+          actorId: null,
+          action: entry.action,
+          targetType: entry.target.type,
+          targetId: entry.target.id ?? null,
+          ip: null,
           ...(entry.meta ? { meta: entry.meta } : {}),
         },
       });

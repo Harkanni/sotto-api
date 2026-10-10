@@ -49,6 +49,20 @@ export const apiEnv = baseEnv
     ASK_RATE_PER_MINUTE: z.coerce.number().int().positive().default(20),
     /** Overrides the embedding model's relevance floor (cosine, 0–1; see ask/retrieval). */
     ASK_MIN_SIMILARITY: z.coerce.number().min(0).max(1).optional(),
+    /**
+     * Payments (ADR 0004). Unset → the labelled test checkout (nothing charged). A Paystack
+     * key must be a test key (sk_test_…) unless BILLING_ALLOW_LIVE is set on purpose. Plan
+     * codes (PLN_…) come from Paystack's dashboard, one per plan and interval.
+     */
+    PAYSTACK_SECRET_KEY: optional,
+    PAYSTACK_BASE_URL: optional,
+    PAYSTACK_PLAN_PRO_MONTHLY: optional,
+    PAYSTACK_PLAN_PRO_YEARLY: optional,
+    PAYSTACK_PLAN_BUSINESS_MONTHLY: optional,
+    PAYSTACK_PLAN_BUSINESS_YEARLY: optional,
+    BILLING_ALLOW_LIVE: z
+      .preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean())
+      .default(false),
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()
