@@ -2641,6 +2641,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "text/event-stream",
@@ -2663,7 +2673,7 @@
             }
           }
         },
-        "summary": "Answer the question again, replacing this answer (streamed).",
+        "summary": "Answer the question again, replacing this answer (streamed); optionally with another model.",
         "tags": [
           "ask"
         ]
@@ -5276,6 +5286,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "model": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
           }
         },
         "required": [
@@ -5397,6 +5412,16 @@
             "additionalProperties": false
           }
         ]
+      },
+      "RegenerateBody": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 300
+          }
+        }
       },
       "FeedbackBody": {
         "type": "object",
