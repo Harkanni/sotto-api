@@ -91,6 +91,16 @@ export class StorageKeys {
   derived(workspaceId: string, fileId: string, name: DerivedName): string {
     return `${this.file(workspaceId, fileId)}${name}`;
   }
+
+  /**
+   * One numbered chunk of a live capture (Listen mode, the notetaker bot): raw 16 kHz mono PCM16.
+   * Kept under the file's prefix, so permanent delete takes them too. Zero-padded so a listing
+   * comes back in order.
+   */
+  liveChunk(workspaceId: string, fileId: string, seq: number): string {
+    if (!Number.isInteger(seq) || seq < 0) throw new Error('A live chunk number is a whole number');
+    return `${this.file(workspaceId, fileId)}live/${String(seq).padStart(6, '0')}.pcm`;
+  }
 }
 
 // ── Multipart sizing ─────────────────────────────────────────────────────────────────────────
@@ -316,6 +326,72 @@ export class Storage {
         ContentType: 'application/json',
       }),
     );
+  }
+
+  async getBytes(key: string): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of await this.getStream(key)) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  }
+
+  /**
+   * Writes one object from a stream of pieces, never holding more than a part in memory: a live
+   * meeting's chunks joined into one recording can be hundreds of megabytes. Small results are a
+   * single PUT; larger ones a multipart upload (aborted if anything fails, so no orphan parts).
+   * Returns the size written.
+   */
+  async putFromPieces(
+    key: string,
+    pieces: AsyncIterable<Buffer | Uint8Array>,
+    contentType: string,
+    partSize = 8 * 1024 * 1024,
+  ): Promise<number> {
+    if (partSize < S3_MIN_PART) throw new Error('Parts must be at least 5 MiB');
+    let buffered: Buffer[] = [];
+    let bufferedBytes = 0;
+    let total = 0;
+    let uploadId: string | null = null;
+    const parts: UploadedPart[] = [];
+    const flush = async (body: Buffer) => {
+      uploadId ??= await this.createMultipart(key, contentType);
+      const partNumber = parts.length + 1;
+      const out = await this.s3.send(
+        new UploadPartCommand({
+          Bucket: this.bucket,
+          Key: key,
+          UploadId: uploadId,
+          PartNumber: partNumber,
+          Body: body,
+        }),
+      );
+      if (!out.ETag) throw new Error('Storage did not return a part ETag');
+      parts.push({ partNumber, etag: out.ETag });
+    };
+    try {
+      for await (const piece of pieces) {
+        const bytes = Buffer.isBuffer(piece) ? piece : Buffer.from(piece);
+        buffered.push(bytes);
+        bufferedBytes += bytes.length;
+        total += bytes.length;
+        if (bufferedBytes >= partSize) {
+          const joined = Buffer.concat(buffered);
+          buffered = [joined.subarray(partSize)];
+          bufferedBytes = joined.length - partSize;
+          await flush(joined.subarray(0, partSize));
+        }
+      }
+      const rest = Buffer.concat(buffered);
+      if (uploadId === null) {
+        await this.putBytes(key, rest, contentType);
+        return total;
+      }
+      if (rest.length) await flush(rest);
+      await this.completeMultipart(key, uploadId, parts);
+      return total;
+    } catch (error) {
+      if (uploadId) await this.abortMultipart(key, uploadId);
+      throw error;
+    }
   }
 
   async putBytes(key: string, body: Buffer | Uint8Array, contentType: string): Promise<void> {
