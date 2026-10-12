@@ -3606,7 +3606,93 @@
             }
           }
         },
-        "summary": "The live transcript and notes (Server-Sent Events): `session` first and on every change, `segment` per transcribed line (id `seq.idx`; reconnect with Last-Event-ID to resume), `notes`, `ping` every 25 s.",
+        "summary": "The live transcript and notes (Server-Sent Events): `session` first and on every change, `segment` per transcribed line (id `seq.idx`; reconnect with Last-Event-ID to resume), `notes` ({notes, notesAt, notesError}) when they change, `ping` every 25 s.",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}/ask": {
+      "post": {
+        "operationId": "LiveController_ask",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveAskChat"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Ask during the call: opens a chat scoped to the transcript so far plus your library. Send questions to POST /conversations/:id/messages as usual.",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}/notes": {
+      "post": {
+        "operationId": "LiveController_notes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update the running notes now (they also refresh every few minutes), with the workspace’s default model under its privacy rules.",
         "tags": [
           "live"
         ]
@@ -5786,6 +5872,11 @@
               "documents",
               "meetings"
             ]
+          },
+          "liveSessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "additionalProperties": false
@@ -6857,6 +6948,10 @@
             "nullable": true,
             "type": "string"
           },
+          "notesError": {
+            "nullable": true,
+            "type": "string"
+          },
           "error": {
             "nullable": true,
             "type": "string"
@@ -6879,6 +6974,7 @@
           "transcriber",
           "notes",
           "notesAt",
+          "notesError",
           "error",
           "file"
         ],
@@ -6923,12 +7019,24 @@
               ],
               "additionalProperties": false
             }
+          },
+          "routeLabel": {
+            "type": "string"
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "private": {
+            "type": "boolean"
           }
         },
         "required": [
           "summary",
           "points",
-          "actions"
+          "actions",
+          "routeLabel",
+          "isMock",
+          "private"
         ],
         "additionalProperties": false
       },
@@ -7014,6 +7122,18 @@
           "endMs",
           "text",
           "speaker"
+        ],
+        "additionalProperties": false
+      },
+      "LiveAskChat": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId"
         ],
         "additionalProperties": false
       },

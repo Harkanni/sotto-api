@@ -5,6 +5,7 @@ import { AiSettingsService } from '../../src/ai/ai-settings.service.js';
 import { LiveService } from '../../src/live/live.service.js';
 import { FIRST_NOTES_AFTER_MS, LiveNotesService } from '../../src/live/notes.service.js';
 import { parseLiveNotes, liveTranscriptText } from '../../src/live/notes.js';
+import { relevantStretches, stretches } from '../../src/live/passages.js';
 import { withoutStorage } from './harness.js';
 import { Kestrel, type Who } from './kestrel.js';
 import { StandInLlm } from './stand-in-llm.js';
@@ -31,6 +32,40 @@ describe('live notes parsing', () => {
     expect(liveTranscriptText([{ startMs: 3_725_000, text: 'x', speaker: 'Tunde' }])).toBe(
       '[1:02:05] Tunde: x',
     );
+  });
+});
+
+describe('live passages for Ask', () => {
+  const line = (seq: number, startMs: number, text: string) => ({
+    seq,
+    idx: 0,
+    startMs,
+    endMs: startMs + 3_000,
+    text,
+    speaker: null,
+  });
+  const call = [
+    line(0, 0, 'Welcome everyone.'),
+    line(1, 20_000, 'The budget review is next week.'),
+    line(2, 50_000, 'We ship the mobile app on Friday.'),
+    line(3, 95_000, 'Lunch is at noon.'),
+    line(4, 140_000, 'Any questions before we close?'),
+  ];
+
+  it('groups the call into stretches of about 45 seconds', () => {
+    expect(stretches(call).map((s) => [s.key, s.startMs, s.endMs])).toEqual([
+      ['0.0', 0, 23_000],
+      ['2.0', 50_000, 53_000],
+      ['3.0', 95_000, 98_000],
+      ['4.0', 140_000, 143_000],
+    ]);
+  });
+
+  it('offers the stretches that share words with the question, and always the latest', () => {
+    const picked = relevantStretches(call, 'When do we ship the app?');
+    expect(picked.map((s) => s.key)).toEqual(['2.0', '4.0']);
+    expect(relevantStretches(call, 'what about the weather').map((s) => s.key)).toEqual(['4.0']);
+    expect(relevantStretches([], 'anything')).toEqual([]);
   });
 });
 
@@ -216,6 +251,62 @@ describe.skipIf(withoutStorage)('live notes and the privacy rules', () => {
     const { id } = await call('tunde', FIRST_NOTES_AFTER_MS);
     expect(await session('tunde', id)).toMatchObject({ notes: null, notesError: 'unreadable' });
     expect((await live.segments(k.workspaceId, id, null)).length).toBe(15);
+  });
+
+  /** Asks in a chat and returns the finished answer from the stream. */
+  async function askIn(who: Who, conversationId: string, content: string) {
+    const res = await k.people[who]
+      .post(`/api/v1/conversations/${conversationId}/messages`, { content })
+      .buffer(true)
+      .parse((r, done) => {
+        let data = '';
+        r.on('data', (c: Buffer) => (data += c.toString()));
+        r.on('end', () => done(null, data));
+      })
+      .expect(200);
+    const events = (res.body as string)
+      .split('\n\n')
+      .filter((b) => b.startsWith('event:'))
+      .map((b) => JSON.parse(b.split('\ndata: ')[1]!) as { type: string; answer?: unknown });
+    return events.find((e) => e.type === 'done')!.answer as {
+      status: string;
+      hidden: { restricted: number; confidential: number };
+      citations: { fileId: string | null; startMs: number | null; quote: string }[];
+    };
+  }
+
+  it('answers mid-call from what was said so far, cited by moment', async () => {
+    transcriber.script.push('Welcome to the launch sync.', 'We ship the mobile app on Friday.');
+    const { id, fileId } = await call('tunde', 8_000);
+    const { conversationId } = (
+      await k.people.tunde.post(`/api/v1/live-sessions/${id}/ask`).expect(201)
+    ).body as { conversationId: string };
+    outside.reply = 'You ship on Friday [1].';
+    const answer = await askIn('tunde', conversationId, 'When do we ship the mobile app?');
+    expect(outside.sentText()).toContain('We ship the mobile app on Friday.');
+    expect(answer.status).toBe('done');
+    expect(answer.citations[0]).toMatchObject({ fileId, startMs: 200 });
+    const stored = await k.db.citation.findFirstOrThrow({ where: { fileId } });
+    expect(stored.chunkId).toBeNull();
+  });
+
+  it('keeps a Restricted call from an outside model when asking, too', async () => {
+    transcriber.script.push(SECRET);
+    const calls = outside.chatCalls();
+    const { id } = await call('ada', 4_000, { sensitivity: 'restricted' });
+    const { conversationId } = (
+      await k.people.ada.post(`/api/v1/live-sessions/${id}/ask`).expect(201)
+    ).body as { conversationId: string };
+    const answer = await askIn('ada', conversationId, 'What is the runway?');
+    expect(answer.hidden.restricted).toBeGreaterThanOrEqual(1);
+    expect(outside.sentText()).not.toContain(SECRET);
+    expect(outside.chatCalls()).toBe(calls); // nothing else to answer from
+  });
+
+  it('lets nobody else scope a chat to a call they can’t open', async () => {
+    const { id } = await call('tunde', 4_000);
+    await k.people.kofi.post(`/api/v1/live-sessions/${id}/ask`).expect(404);
+    await k.people.kofi.post('/api/v1/conversations', { scope: { liveSessionId: id } }).expect(404);
   });
 
   it('refuses to update someone else’s notes', async () => {
