@@ -70,6 +70,7 @@ model User {
   files         File[]
   positions     PlaybackPosition[]
   conversations Conversation[]
+  calendars     CalendarConnection[]
 
   @@map("users")
 }
@@ -159,6 +160,8 @@ model Workspace {
   metadata      String?
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @default(now()) @updatedAt @map("updated_at")
+  /// Admins can turn the notetaker bot off for the whole workspace (PLAN → consent).
+  meetingBots   Boolean                @default(true) @map("meeting_bots")
   memberships   Membership[]
   invites       Invite[]
   sessions      Session[]
@@ -183,6 +186,10 @@ model Workspace {
   aiPolicy      WorkspaceAiPolicy?
   usage         UsageEvent[]
   subscription  Subscription?
+  liveSessions  LiveSession[]
+  liveSegments  LiveSegment[]
+  calendars     CalendarConnection[]
+  botAssignments BotAssignment[]
 
   @@map("workspaces")
 }
@@ -306,6 +313,10 @@ enum FileSource {
   IMPORT
   /// Written in Sotto: a new note, or an answer saved as a note (Phase 5).
   WRITTEN
+  /// Listen mode: captured live in the app during a call (Phase 7).
+  LIVE
+  /// Recorded by the notetaker bot that joined a call (Phase 7).
+  BOT
 
   @@map("file_source")
 }
@@ -360,6 +371,7 @@ model File {
   positions     PlaybackPosition[]
   note          Note?
   citations     Citation[]
+  liveSession   LiveSession?
 
   @@index([workspaceId, deletedAt, createdAt(sort: Desc)])
   @@index([workspaceId, collectionId])
@@ -857,4 +869,165 @@ model BillingEvent {
   receivedAt   DateTime @default(now()) @map("received_at")
 
   @@map("billing_events")
+}
+
+// ── Live notetaker (Phase 7) ────────────────────────────────────────────────────────────────
+
+enum LiveSource {
+  /// Listen mode: the app captures the microphone (and a call's tab audio on desktop).
+  LISTEN
+  /// The notetaker bot joined the call as a participant.
+  BOT
+
+  @@map("live_source")
+}
+
+enum LiveStatus {
+  /// Created; no audio yet.
+  CONNECTING
+  LIVE
+  /// Stopped: the joined recording went to the normal pipeline as a meeting file.
+  ENDED
+  FAILED
+
+  @@map("live_status")
+}
+
+/// One live capture of a call. Its meeting `File` exists from the start (status UPLOADING, source
+/// LIVE or BOT), so the call shows in Meetings while it happens; on End the numbered audio chunks
+/// are joined into one recording and the file goes through the pipeline like any upload.
+model LiveSession {
+  id            String         @id @default(cuid(2))
+  workspaceId   String         @map("workspace_id")
+  fileId        String         @unique @map("file_id")
+  /// Kept when the person leaves; null only if their account is deleted.
+  startedById   String?        @map("started_by_id")
+  source        LiveSource
+  status        LiveStatus     @default(CONNECTING)
+  /// What's being captured: "mic", "tab" (Listen) or "call" (the bot).
+  inputs        String[]       @default([])
+  /// Audio chunks are numbered from 0; this is the next one expected, so a resent chunk is
+  /// ignored and a gap is refused until it's filled.
+  nextSeq       Int            @default(0) @map("next_seq")
+  /// Audio received so far (16 kHz mono PCM16, so bytes / 32 = ms).
+  durationMs    Int            @default(0) @map("duration_ms")
+  /// Notes and action items from the transcript so far ({ summary, points, actions }); refreshed
+  /// every few minutes while live. Content, like a transcript: never logged.
+  notes         Json?
+  notesAt       DateTime?      @map("notes_at")
+  /// The model that wrote the notes, as a catalog reference, and where it ran.
+  notesModel    String?        @map("notes_model")
+  /// The last failure as a code ("transcriber_unreachable"), never content.
+  error         String?
+  lastChunkAt   DateTime?      @map("last_chunk_at")
+  startedAt     DateTime       @default(now()) @map("started_at")
+  endedAt       DateTime?      @map("ended_at")
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  file          File           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  segments      LiveSegment[]
+  bot           BotAssignment?
+
+  @@index([workspaceId, status])
+  @@map("live_sessions")
+}
+
+/// A line of the live transcript, as the transcriber returned it for one chunk. A preview: the
+/// saved meeting gets the full-quality transcript from the pipeline when the session ends.
+model LiveSegment {
+  id          String      @id @default(cuid(2))
+  workspaceId String      @map("workspace_id")
+  sessionId   String      @map("session_id")
+  /// The audio chunk it came from; with `idx`, its order and its SSE event id.
+  seq         Int
+  idx         Int
+  startMs     Int         @map("start_ms")
+  endMs       Int         @map("end_ms")
+  text        String
+  speaker     String?
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session     LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, seq, idx])
+  @@map("live_segments")
+}
+
+enum MeetPlatform {
+  MEET
+  ZOOM
+  TEAMS
+
+  @@map("meet_platform")
+}
+
+/// A person's calendar, connected so the notetaker can join their calls. The refresh token is
+/// envelope-encrypted like BYOK keys (packages/ai vault) and never leaves the api.
+model CalendarConnection {
+  id                    String          @id @default(cuid(2))
+  workspaceId           String          @map("workspace_id")
+  userId                String          @map("user_id")
+  /// "google", "microsoft", or "sample" for the labelled stand-in calendar.
+  provider              String
+  /// The calendar account's address, shown so people know which calendar is connected.
+  accountEmail          String?         @map("account_email")
+  encryptedRefreshToken Bytes?          @map("encrypted_refresh_token")
+  wrappedDek            Bytes?          @map("wrapped_dek")
+  keyWrapper            String?         @map("key_wrapper")
+  scopes                String[]        @default([])
+  /// Send the notetaker to every call with a meeting link, unless skipped one by one.
+  autoJoin              Boolean         @default(false) @map("auto_join")
+  /// The last sync that failed, as a code ("token_revoked"), never content.
+  lastError             String?         @map("last_error")
+  syncedAt              DateTime?       @map("synced_at")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  workspace             Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments           BotAssignment[]
+
+  @@unique([workspaceId, userId, provider])
+  @@map("calendar_connections")
+}
+
+enum BotStatus {
+  /// Will join at `joinAt`.
+  SCHEDULED
+  /// Launching, or asking to be let in.
+  JOINING
+  /// In the call and recording (its live session is LIVE).
+  IN_CALL
+  /// Left after the call; the meeting is in Sotto.
+  DONE
+  /// Someone chose not to send it, or the event was cancelled.
+  SKIPPED
+  /// Couldn't join or was removed; `error` says why.
+  FAILED
+
+  @@map("bot_status")
+}
+
+/// The notetaker sent to one calendar event. One per event per connection, so Send and Skip
+/// toggle the same row.
+model BotAssignment {
+  id            String             @id @default(cuid(2))
+  workspaceId   String             @map("workspace_id")
+  connectionId  String             @map("connection_id")
+  /// The calendar's own event id.
+  eventId       String             @map("event_id")
+  title         String
+  meetingUrl    String             @map("meeting_url")
+  platform      MeetPlatform
+  status        BotStatus          @default(SCHEDULED)
+  /// The bot provider's reference for its run ("meet:<job id>"), to cancel it.
+  providerRef   String?            @map("provider_ref")
+  joinAt        DateTime           @map("join_at")
+  endsAt        DateTime?          @map("ends_at")
+  liveSessionId String?            @unique @map("live_session_id")
+  error         String?
+  updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
+  workspace     Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection    CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  liveSession   LiveSession?       @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+
+  @@unique([connectionId, eventId])
+  @@index([status, joinAt])
+  @@map("bot_assignments")
 }

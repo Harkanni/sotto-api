@@ -4777,7 +4777,9 @@
           "recording",
           "sample",
           "import",
-          "written"
+          "written",
+          "live",
+          "bot"
         ]
       },
       "FileStatus": {
