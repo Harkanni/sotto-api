@@ -17,6 +17,7 @@ import { ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nes
 import type { Observable } from 'rxjs';
 import { z } from 'zod';
 import { RequireRole } from '../auth/auth.guard.js';
+import { AiModule } from '../ai/ai.controller.js';
 import { CollectionsModule } from '../collections/collections.controller.js';
 import { ApiErrors, ApiException } from '../common/errors.js';
 import { type ApiRequest, Ctx, type RequestAuth } from '../common/request.js';
@@ -26,6 +27,7 @@ import { IdParam } from '../workspaces/workspaces.controller.js';
 import { MAX_CHUNK_BYTES } from './audio.js';
 import { LiveHub } from './live.hub.js';
 import { LiveService } from './live.service.js';
+import { LiveNotesService } from './notes.service.js';
 import {
   ChunkQuery,
   ChunkResult,
@@ -133,7 +135,7 @@ export class LiveController {
     summary:
       'The live transcript and notes (Server-Sent Events): `session` first and on every change, ' +
       '`segment` per transcribed line (id `seq.idx`; reconnect with Last-Event-ID to resume), ' +
-      '`notes`, `ping` every 25 s.',
+      '`notes` ({notes, notesAt, notesError}) when they change, `ping` every 25 s.',
   })
   @ApiOkResponse({ description: 'text/event-stream', standardSchema: LiveSegmentSchema })
   events(
@@ -142,6 +144,18 @@ export class LiveController {
     @Headers('last-event-id') lastEventId: string | undefined,
   ): Promise<Observable<MessageEvent>> {
     return this.live.stream(viewerOf(auth), id, lastEventId);
+  }
+
+  @Post(':id/notes')
+  @RequireRole('member')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Update the running notes now (they also refresh every few minutes), with the workspace’s default model under its privacy rules.',
+  })
+  @ApiOkResponse({ standardSchema: LiveSessionSchema })
+  notes(@Ctx() auth: RequestAuth, @Param('id', { schema: IdParam }) id: string) {
+    return this.live.refreshNotes(viewerOf(auth), id);
   }
 
   @Post(':id/end')
@@ -158,9 +172,9 @@ export class LiveController {
 }
 
 @Module({
-  imports: [FilesModule, CollectionsModule],
+  imports: [FilesModule, CollectionsModule, AiModule],
   controllers: [LiveController],
-  providers: [LiveService, LiveHub, LiveTranscriber],
+  providers: [LiveService, LiveHub, LiveTranscriber, LiveNotesService],
   exports: [LiveService],
 })
 export class LiveModule {}

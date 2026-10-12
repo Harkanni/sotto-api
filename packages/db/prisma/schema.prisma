@@ -915,8 +915,11 @@ model LiveSession {
   /// every few minutes while live. Content, like a transcript: never logged.
   notes         Json?
   notesAt       DateTime?      @map("notes_at")
-  /// The model that wrote the notes, as a catalog reference, and where it ran.
+  /// The model that wrote the notes, as a catalog reference.
   notesModel    String?        @map("notes_model")
+  /// Why notes aren't being written, as a code ("no_model", "restricted_private_only"); null
+  /// when they are, or before the first try.
+  notesError    String?        @map("notes_error")
   /// The last failure as a code ("transcriber_unreachable"), never content.
   error         String?
   lastChunkAt   DateTime?      @map("last_chunk_at")

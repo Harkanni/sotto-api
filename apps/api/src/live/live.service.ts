@@ -30,6 +30,7 @@ import {
 } from './audio.js';
 import { type LiveEvent, LiveHub } from './live.hub.js';
 import type { LiveSegmentSchema, LiveSessionSchema, StartLive } from './schemas.js';
+import { LiveNotesService, type StoredNotes, presentNotes } from './notes.service.js';
 import { LiveTranscriber, TranscriberError } from './transcriber.js';
 
 type SessionOut = z.infer<typeof LiveSessionSchema>;
@@ -92,6 +93,7 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
     @Inject(UsageService) private readonly usage: UsageService,
     @Inject(LiveTranscriber) private readonly transcriber: LiveTranscriber,
     @Inject(LiveHub) private readonly hub: LiveHub,
+    @Inject(LiveNotesService) private readonly notes: LiveNotesService,
     @Inject(APP_CONFIG) private readonly config: ApiConfig,
   ) {}
 
@@ -208,8 +210,9 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
         : null,
       canControl: session.startedById === viewer.userId && OPEN.includes(session.status as never),
       transcriber: engine ? { engine: engine.active, isMock: engine.isMock } : null,
-      notes: (session.notes as SessionOut['notes']) ?? null,
+      notes: presentNotes(session.notes as StoredNotes | null),
       notesAt: session.notesAt?.toISOString() ?? null,
+      notesError: session.notesError,
       error: session.error,
       file: this.files.present(file, access),
     };
@@ -438,6 +441,8 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
           };
           await this.hub.publish(session.id, { type: 'segment', data, id: data.id });
         }
+        // Running notes, when they're due; written beside the transcription, never in its way.
+        this.notes.refresh(session.workspaceId, session.id);
       }
     } catch (failure) {
       error = failure instanceof TranscriberError ? failure.code : 'transcriber_failed';
@@ -463,6 +468,17 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
       { userId: session.startedById, role: membership.role, workspaceId: session.workspaceId },
       session,
     );
+  }
+
+  /** "Update notes" while listening: writes them now if anything new was said. */
+  async refreshNotes(viewer: Viewer, id: string): Promise<SessionOut> {
+    const session = await this.controlled(viewer, id);
+    this.notes.refresh(session.workspaceId, session.id, { force: true });
+    await this.notes.settled(session.id);
+    const fresh = await this.db(session.workspaceId).liveSession.findFirstOrThrow({
+      where: { id: session.id },
+    });
+    return this.present(viewer, fresh);
   }
 
   // ── End ────────────────────────────────────────────────────────────────────────────────────

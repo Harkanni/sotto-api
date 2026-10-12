@@ -2,7 +2,8 @@
 -- Listen sessions and their live transcript, calendar connections and the notetaker bot's
 -- assignments; FileSource LIVE and BOT; the workspace's switch for bots.
 -- Generated with `prisma migrate diff` (minus the hand-written indexes it always reports); the
--- CHECKs at the end are hand-written.
+-- CHECKs at the end are hand-written. (Edited before merge: live_sessions.notes_error. Never
+-- deployed before that.)
 
 -- Adding enum values inside the migration's transaction is fine on PostgreSQL 12+; they are
 -- only used by later statements' rows, never in this file.
@@ -38,6 +39,7 @@ CREATE TABLE "live_sessions" (
     "notes" JSONB,
     "notes_at" TIMESTAMP(3),
     "notes_model" TEXT,
+    "notes_error" TEXT,
     "error" TEXT,
     "last_chunk_at" TIMESTAMP(3),
     "started_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

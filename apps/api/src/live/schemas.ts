@@ -40,6 +40,11 @@ export const LiveNotesSchema = z
     summary: z.string(),
     points: z.array(z.string()),
     actions: z.array(z.object({ text: z.string(), owner: z.string().nullable() })),
+    /** Where the notes were written, like an answer's data-route badge. */
+    routeLabel: z.string(),
+    isMock: z.boolean(),
+    /** Written by a model in the cluster. */
+    private: z.boolean(),
   })
   .meta({ id: 'LiveNotes' });
 
@@ -61,6 +66,12 @@ export const LiveSessionSchema = z
     transcriber: z.object({ engine: z.string(), isMock: z.boolean() }).nullable(),
     notes: LiveNotesSchema.nullable(),
     notesAt: z.string().nullable(),
+    /**
+     * Why notes aren't being written: no_model, model_unavailable, restricted_private_only,
+     * confidential_not_allowed, quota, unreadable, failed. Null while they are (or before the
+     * first minute of the call).
+     */
+    notesError: z.string().nullable(),
     /** The last problem as a code ("transcriber_unreachable"); the capture carries on. */
     error: z.string().nullable(),
     /** The meeting it becomes. */
