@@ -13,6 +13,8 @@ export class StandInTranscriber {
   failNext = 0;
   /** Delay before answering, to keep chunks in flight. */
   delayMs = 0;
+  /** What the next chunks "say", in order; "Line n" once it runs out. */
+  readonly script: string[] = [];
   private lines = 0;
   private server: Server | null = null;
   url = '';
@@ -60,6 +62,7 @@ export class StandInTranscriber {
               return;
             }
             this.lines += 1;
+            const text = this.script.shift() ?? `Line ${this.lines}`;
             res.end(
               JSON.stringify({
                 engine: 'stand-in',
@@ -67,7 +70,7 @@ export class StandInTranscriber {
                 language: 'en',
                 durationMs: 4_000,
                 isMock: false,
-                segments: [{ startMs: 200, endMs: 3_800, text: ` Line ${this.lines} ` }],
+                segments: [{ startMs: 200, endMs: 3_800, text: ` ${text} ` }],
               }),
             );
           };

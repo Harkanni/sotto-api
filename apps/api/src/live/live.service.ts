@@ -470,6 +470,24 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /**
+   * Ask during the call: a chat scoped to this call's transcript so far plus the library
+   * (Ask's `liveSessionId` scope). Questions then go through the usual Ask endpoint, so answers
+   * stream, cite moments of the call and follow every privacy rule.
+   */
+  async askChat(viewer: Viewer, id: string): Promise<{ conversationId: string }> {
+    const session = await this.open(viewer, id);
+    const created = await this.db(viewer.workspaceId).conversation.create({
+      data: {
+        workspaceId: viewer.workspaceId,
+        userId: viewer.userId,
+        title: '',
+        scope: { liveSessionId: session.id },
+      },
+    });
+    return { conversationId: created.id };
+  }
+
   /** "Update notes" while listening: writes them now if anything new was said. */
   async refreshNotes(viewer: Viewer, id: string): Promise<SessionOut> {
     const session = await this.controlled(viewer, id);

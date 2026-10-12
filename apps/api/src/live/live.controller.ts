@@ -38,6 +38,8 @@ import {
 } from './schemas.js';
 import { LiveTranscriber } from './transcriber.js';
 
+const AskChat = z.object({ conversationId: z.string() }).meta({ id: 'LiveAskChat' });
+
 const EndResult = z
   .object({
     /** True when nothing had been captured: the empty meeting was removed, not saved. */
@@ -144,6 +146,19 @@ export class LiveController {
     @Headers('last-event-id') lastEventId: string | undefined,
   ): Promise<Observable<MessageEvent>> {
     return this.live.stream(viewerOf(auth), id, lastEventId);
+  }
+
+  @Post(':id/ask')
+  @RequireRole('viewer')
+  @HttpCode(201)
+  @ApiOperation({
+    summary:
+      'Ask during the call: opens a chat scoped to the transcript so far plus your library. ' +
+      'Send questions to POST /conversations/:id/messages as usual.',
+  })
+  @ApiOkResponse({ standardSchema: AskChat })
+  ask(@Ctx() auth: RequestAuth, @Param('id', { schema: IdParam }) id: string) {
+    return this.live.askChat(viewerOf(auth), id);
   }
 
   @Post(':id/notes')
