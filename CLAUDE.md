@@ -77,24 +77,26 @@ Three private repos, cloned side by side: `sotto-web` (Next.js app, design syste
 
 `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm
 openapi` when routes change. Integration tests (`apps/api/test/integration`) need a real
-Postgres: set `TEST_DATABASE_URL` (CI provides a service container; locally `pnpm deps:up`).
+Postgres: set `TEST_DATABASE_URL` (Jenkins starts `compose.deps.yaml`; locally `pnpm deps:up`).
 New endpoints get integration tests covering each role, including the ones that must be refused.
 Never claim a check ran unless it did; record runs in the phase log.
 
-Agent sandbox (no npm registry): `GH_TOKEN=$GH_TOKEN scripts/agent-deps.sh` restores every
-workspace's `node_modules` from CI's `dev-cache` release; run pnpm with
-`npm_config_manage_package_manager_versions=false` so it doesn't try to download itself. After a
-dependency change: push, wait for the `sync` job (it also commits the lockfile), pull, rerun.
+CI is Jenkins (the `Jenkinsfile`; GitHub Actions is no longer used): secrets scan, lint,
+typecheck, unit and integration tests, `openapi.json` drift, the transcriber's pytest, an image
+smoke test, the 30-minute ingestion check and the eval set; on `main`, image push and the demo
+deploy. Agent sandbox: run pnpm with `npm_config_manage_package_manager_versions=false`; install
+dependencies with `pnpm install` and commit `pnpm-lock.yaml` with the change (`scripts/agent-deps.sh`
+restores an old `dev-cache` snapshot when the registry is unreachable).
 
 ## Git and checkpoints
 
-- `main` changes only through PRs with green CI; the owner merges. Never merge your own PR,
+- `main` changes only through PRs with a green Jenkins build; the owner merges. Never merge your own PR,
   force-push or rewrite history. Branches `feat/p<phase>-<slice>`, `fix/…`, `chore/…`;
   Conventional Commits.
 - Work in progress lives on a pushed branch with a draft PR whose description is a checklist.
   Checkpoint after every logically complete task: checks, phase log, commit, push.
 - Before each commit, read the diff for accidental changes and secrets. Only `.env.example` is
-  committed. CI reaches AWS with access keys stored as GitHub secrets (ADR 0007); don't
+  committed. Jenkins reaches AWS with an IAM access key stored in Jenkins' credentials; don't
   reintroduce OIDC.
 - API + web changes are paired PRs; this one merges first. Every PR has a companion
   `../sotto-platform/docs/STATUS.md` update.
