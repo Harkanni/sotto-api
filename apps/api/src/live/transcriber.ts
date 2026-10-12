@@ -50,9 +50,12 @@ export class LiveTranscriber {
 
   constructor(@Inject(APP_CONFIG) private readonly config: ApiConfig) {}
 
-  /** The active engine, or null when the transcriber can't be reached. */
-  async engine(): Promise<EngineInfo | null> {
-    if (this.engineInfo && Date.now() - this.engineInfo.at < ENGINE_TTL_MS) {
+  /**
+   * The active engine, or null when the transcriber can't be reached. `fresh` skips the cache:
+   * the privacy check for Restricted audio must not trust what the engine was a minute ago.
+   */
+  async engine(fresh = false): Promise<EngineInfo | null> {
+    if (!fresh && this.engineInfo && Date.now() - this.engineInfo.at < ENGINE_TTL_MS) {
       return this.engineInfo.info;
     }
     try {
@@ -70,20 +73,23 @@ export class LiveTranscriber {
 
   /**
    * Transcribes one WAV chunk. `inClusterOnly` (Restricted captures) refuses an engine that
-   * would send audio outside, the same rule as Restricted files in the pipeline.
+   * would send audio outside, the same rule as Restricted files in the pipeline: checked here
+   * against the engine as it is now, and again by the transcriber itself (`in_cluster_only`),
+   * which refuses with 409 if its engine sends audio out.
    */
   async transcribe(
     wav: Buffer,
     options: { language?: string | null; inClusterOnly: boolean },
   ): Promise<LiveTranscript> {
     if (options.inClusterOnly) {
-      const engine = await this.engine();
+      const engine = await this.engine(true);
       if (!engine) throw new TranscriberError('transcriber_unreachable');
       if (engine.dataLocation !== 'IN_CLUSTER') throw new TranscriberError('engine_outside');
     }
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'chunk.wav');
     if (options.language) form.append('language', options.language);
+    if (options.inClusterOnly) form.append('in_cluster_only', 'true');
     let res: Response;
     try {
       res = await fetch(new URL('/v1/transcribe', this.config.TRANSCRIBER_URL), {
@@ -94,6 +100,7 @@ export class LiveTranscriber {
     } catch {
       throw new TranscriberError('transcriber_unreachable');
     }
+    if (res.status === 409) throw new TranscriberError('engine_outside');
     if (!res.ok) throw new TranscriberError('transcriber_failed');
     try {
       return Result.parse(await res.json());

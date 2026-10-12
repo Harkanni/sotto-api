@@ -3399,6 +3399,261 @@
           "ai"
         ]
       }
+    },
+    "/api/v1/live-sessions": {
+      "post": {
+        "operationId": "LiveController_start",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartLive"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start listening to a call: creates the meeting (shown as live in Meetings) and the session that audio is sent to.",
+        "tags": [
+          "live"
+        ]
+      },
+      "get": {
+        "operationId": "LiveController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSessionList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Live meetings happening now that you can open.",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}": {
+      "get": {
+        "operationId": "LiveController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One live session: status, inputs, notes and the meeting it becomes.",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}/audio": {
+      "post": {
+        "operationId": "LiveController_audio",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveChunkResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send the next piece of audio: up to 15 s of 16 kHz mono 16-bit PCM, numbered from 0 in `seq`. A piece that already arrived is accepted again without changes; a gap is refused (409 CHUNK_GAP).",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}/events": {
+      "get": {
+        "operationId": "LiveController_events",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSegment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The live transcript and notes (Server-Sent Events): `session` first and on every change, `segment` per transcribed line (id `seq.idx`; reconnect with Last-Event-ID to resume), `notes`, `ping` every 25 s.",
+        "tags": [
+          "live"
+        ]
+      }
+    },
+    "/api/v1/live-sessions/{id}/end": {
+      "post": {
+        "operationId": "LiveController_end",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndLiveResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stop listening: the audio becomes a meeting and goes through transcription and notes like any recording.",
+        "tags": [
+          "live"
+        ]
+      }
     }
   },
   "info": {
@@ -6474,6 +6729,314 @@
             "maxLength": 500
           }
         }
+      },
+      "StartLive": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "collectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "sensitivity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Sensitivity"
+              }
+            ]
+          },
+          "inputs": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mic",
+                "tab"
+              ]
+            }
+          }
+        },
+        "required": [
+          "inputs"
+        ]
+      },
+      "LiveSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "listen",
+              "bot"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "live",
+              "ended",
+              "failed"
+            ]
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveInput"
+            }
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "nextSeq": {
+            "type": "number"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "startedBy": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "canControl": {
+            "type": "boolean"
+          },
+          "transcriber": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "engine": {
+                "type": "string"
+              },
+              "isMock": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "engine",
+              "isMock"
+            ],
+            "additionalProperties": false
+          },
+          "notes": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LiveNotes"
+              }
+            ]
+          },
+          "notesAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/File"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "status",
+          "inputs",
+          "durationMs",
+          "nextSeq",
+          "startedAt",
+          "endedAt",
+          "startedBy",
+          "canControl",
+          "transcriber",
+          "notes",
+          "notesAt",
+          "error",
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "LiveInput": {
+        "type": "string",
+        "enum": [
+          "mic",
+          "tab",
+          "call"
+        ]
+      },
+      "LiveNotes": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "owner": {
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "owner"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "points",
+          "actions"
+        ],
+        "additionalProperties": false
+      },
+      "LiveSessionList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveSession"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "LiveChunkQuery": {
+        "type": "object",
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          }
+        },
+        "required": [
+          "seq"
+        ]
+      },
+      "LiveChunkResult": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "nextSeq": {
+            "type": "number"
+          },
+          "durationMs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "accepted",
+          "nextSeq",
+          "durationMs"
+        ],
+        "additionalProperties": false
+      },
+      "LiveSegment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "number"
+          },
+          "idx": {
+            "type": "number"
+          },
+          "startMs": {
+            "type": "number"
+          },
+          "endMs": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          },
+          "speaker": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "idx",
+          "startMs",
+          "endMs",
+          "text",
+          "speaker"
+        ],
+        "additionalProperties": false
+      },
+      "EndLiveResult": {
+        "type": "object",
+        "properties": {
+          "discarded": {
+            "type": "boolean"
+          },
+          "session": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LiveSession"
+              }
+            ]
+          }
+        },
+        "required": [
+          "discarded",
+          "session"
+        ],
+        "additionalProperties": false
       }
     }
   }
