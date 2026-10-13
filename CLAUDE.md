@@ -96,7 +96,7 @@ restores an old `dev-cache` snapshot when the registry is unreachable).
 - Work in progress lives on a pushed branch with a draft PR whose description is a checklist.
   Checkpoint after every logically complete task: checks, phase log, commit, push.
 - Before each commit, read the diff for accidental changes and secrets. Only `.env.example` is
-  committed. Jenkins reaches AWS with an IAM access key stored in Jenkins' credentials; don't
+  committed. Jenkins reaches AWS with an IAM access key in the jenkins user's AWS CLI profile; don't
   reintroduce OIDC.
 - API + web changes are paired PRs; this one merges first. Every PR has a companion
   `../sotto-platform/docs/STATUS.md` update.

@@ -1,6 +1,9 @@
 // Sotto api: every check that used to run in GitHub Actions' ci.yml, now on Jenkins (ADR on
 // Jenkins in sotto-platform), plus the image build and demo deploy on main.
 //
+// AWS access comes from the jenkins user's AWS CLI profile (~jenkins/.aws, set with
+// `sudo -u jenkins aws configure`); the ECR registry is worked out from the account.
+//
 // The Jenkins host needs Docker (with buildx), Node 24 with corepack, the AWS CLI, and the
 // "Lockable Resources" plugin. Everything else (Python, ffmpeg, Postgres, Ollama…) runs in
 // containers, so the host stays clean.
@@ -243,6 +246,7 @@ pipeline {
       steps {
         script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
         sh '''
+          ECR_REGISTRY="${ECR_REGISTRY:-$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com}"
           aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
 
           docker buildx build --platform linux/arm64 --build-arg APP=api \
