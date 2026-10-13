@@ -32,6 +32,14 @@ export const aiEnv = z.object({
   AI_OPENAI_COMPATIBLE_KEY: optional,
   /** Who runs that server: in your cluster, or a third party (then Restricted never goes). */
   AI_OPENAI_COMPATIBLE_LOCATION: z.enum(['IN_CLUSTER', 'THIRD_PARTY']).default('IN_CLUSTER'),
+  /**
+   * Extra JSON fields for every chat request to that server, e.g.
+   * '{"chat_template_kwargs":{"enable_thinking":false}}' for a Qwen model on vLLM (ADR 0032).
+   */
+  AI_OPENAI_COMPATIBLE_CHAT_EXTRA: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() ? JSON.parse(v) : undefined),
+    z.record(z.string(), z.unknown()).optional(),
+  ),
   /** Master key for workspace API keys (32 bytes, base64). Unset → BYOK keys can't be saved. */
   AI_KEYS_MASTER: optional,
   /** Older master keys, comma separated, kept only to open keys wrapped before a rotation. */
@@ -81,6 +89,9 @@ function endpoint(provider: string, settings: AiSettings) {
           ? 'Sotto-hosted model'
           : 'Hosted model',
       ...(settings.AI_OPENAI_COMPATIBLE_KEY ? { apiKey: settings.AI_OPENAI_COMPATIBLE_KEY } : {}),
+      ...(settings.AI_OPENAI_COMPATIBLE_CHAT_EXTRA
+        ? { chatExtraBody: settings.AI_OPENAI_COMPATIBLE_CHAT_EXTRA }
+        : {}),
     };
   }
   throw new AiConfigError(

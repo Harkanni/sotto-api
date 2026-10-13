@@ -25,6 +25,13 @@ export interface EndpointConfig {
   label?: string;
   /** Per-request timeout; transcripts of long meetings take a while to summarise. */
   timeoutMs?: number;
+  /**
+   * Extra fields for every chat request, for what a self-hosted server needs that the OpenAI API
+   * doesn't name (vLLM serving Qwen: `{"chat_template_kwargs": {"enable_thinking": false}}`, so
+   * answers start at once instead of after a hidden reasoning pass). Never overrides the fields
+   * this adapter sets.
+   */
+  chatExtraBody?: Record<string, unknown>;
 }
 
 /** A provider call that failed, by HTTP status; never includes request or response bodies. */
@@ -160,6 +167,7 @@ export class OpenAICompatibleChatProvider implements ChatProvider {
       method: 'POST',
       headers: headers(this.config),
       body: JSON.stringify({
+        ...this.config.chatExtraBody,
         model: request.model,
         messages: request.messages,
         stream: true,

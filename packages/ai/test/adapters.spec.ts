@@ -109,6 +109,37 @@ describe('OpenAI-compatible chat', () => {
   });
 });
 
+describe('OpenAI-compatible chat options', () => {
+  it('adds the server-specific fields from settings, never over its own', async () => {
+    const chat = privateChatFrom(
+      aiEnv.parse({
+        AI_PRIVATE_CHAT: 'openai-compatible:qwen',
+        AI_OPENAI_COMPATIBLE_URL: base,
+        AI_OPENAI_COMPATIBLE_CHAT_EXTRA:
+          '{"chat_template_kwargs":{"enable_thinking":false},"stream":false,"model":"x"}',
+      }),
+    )!;
+    for await (const chunk of chat.provider.stream({
+      model: chat.model,
+      messages: [{ role: 'user', content: 'hi' }],
+    })) {
+      void chunk;
+    }
+    const call = seen.at(-1)!;
+    expect(call.body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(call.body.stream).toBe(true);
+    expect(call.body.model).toBe('qwen');
+  });
+
+  it('refuses extra fields that are not a JSON object', () => {
+    expect(() => aiEnv.parse({ AI_OPENAI_COMPATIBLE_CHAT_EXTRA: '[1]' })).toThrow();
+    expect(() => aiEnv.parse({ AI_OPENAI_COMPATIBLE_CHAT_EXTRA: 'not json' })).toThrow();
+    expect(
+      aiEnv.parse({ AI_OPENAI_COMPATIBLE_CHAT_EXTRA: '' }).AI_OPENAI_COMPATIBLE_CHAT_EXTRA,
+    ).toBeUndefined();
+  });
+});
+
 describe('settings', () => {
   it('builds providers from "provider:model" references', () => {
     const ollama = embeddingProviderFrom(aiEnv.parse({ OLLAMA_URL: 'http://ollama:11434/' }));
