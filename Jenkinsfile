@@ -4,18 +4,47 @@
 // AWS access comes from the jenkins user's AWS CLI profile (~jenkins/.aws, set with
 // `sudo -u jenkins aws configure`); the ECR registry is worked out from the account.
 //
-// The Jenkins host needs Docker (with buildx), Node 24 with corepack, the AWS CLI, and the
-// "Lockable Resources" plugin. Everything else (Python, ffmpeg, Postgres, Ollama…) runs in
+// The Jenkins host needs Docker, Node 24 with corepack and the AWS CLI. Builds run side by side,
+// each in its own slot (useSlot below). Everything else (Python, ffmpeg, Postgres, Ollama…) runs in
 // containers, so the host stays clean.
 //
 // Order: the code checks, transcriber tests and image builds side by side, then the image
-// checks that boot the real services: smoke, a 30-minute recording through real transcription, and the eval set with a
-// real embedding model.
+// checks that boot the real services: smoke, a 30-minute recording through real
+// transcription, and the eval set with a real embedding model.
+
+/** A host port moved into slot n. */
+def slotPort(int base, int n) {
+  return "${base + 20 * n}"
+}
+
+/**
+ * Gives this build its own slot on the host, so several builds (api and web, or two branches)
+ * run at once without colliding: Jenkins' executor number picks the slot, every host port moves
+ * by 20 per slot (slot 0 keeps the usual ones), and container, network, volume and image names
+ * carry it. Keep the node at 5 executors or fewer, or ports start to overlap.
+ */
+def useSlot() {
+  def n = (env.EXECUTOR_NUMBER ?: '0') as int
+  env.CI_NAME = "sotto-ci-${n}"
+  env.COMPOSE_PROJECT_NAME = env.CI_NAME
+  env.NET = "${env.CI_NAME}_default"
+  env.IMG = "ci-${n}"
+  env.PG_PORT = slotPort(5432, n); env.REDIS_PORT = slotPort(6379, n); env.AMQP_PORT = slotPort(5672, n)
+  env.MQ_UI_PORT = slotPort(15672, n); env.S3_PORT = slotPort(8333, n); env.SMTP_PORT = slotPort(1025, n)
+  env.MAILPIT_PORT = slotPort(8025, n); env.OLLAMA_PORT = slotPort(11434, n)
+  env.API_PORT = slotPort(4000, n); env.WORKER_PORT = slotPort(4100, n); env.TRANS_PORT = slotPort(5000, n)
+  env.TEST_DATABASE_URL = "postgresql://sotto:sotto@localhost:${env.PG_PORT}/postgres"
+  env.TEST_S3_ENDPOINT = "http://localhost:${env.S3_PORT}"
+  // The tests' own defaults point at the usual ports: aim them at this slot's services.
+  env.REDIS_URL = "redis://localhost:${env.REDIS_PORT}"
+  env.RABBITMQ_URL = "amqp://sotto:sotto@localhost:${env.AMQP_PORT}"
+  echo "Slot ${n}: ${env.CI_NAME}, Postgres on ${env.PG_PORT}, api on ${env.API_PORT}"
+}
 
 /** Runs on every check stage's failure: the services' last lines, so the log says why. */
 def serviceLogs() {
   sh '''
-    for c in sotto-ci-api sotto-ci-worker sotto-ci-transcriber; do
+    for c in $CI_NAME-api $CI_NAME-worker $CI_NAME-transcriber; do
       docker logs --tail 120 $c 2>&1 | sed "s/^/[$c] /" || true
     done
   '''
@@ -27,16 +56,16 @@ def serviceLogs() {
  */
 def freshServices() {
   sh """
-    docker rm -f sotto-ci-api sotto-ci-worker sotto-ci-transcriber >/dev/null 2>&1 || true
+    docker rm -f \$CI_NAME-api \$CI_NAME-worker \$CI_NAME-transcriber >/dev/null 2>&1 || true
     docker compose -f compose.deps.yaml --profile ai down >/dev/null 2>&1 || true
-    docker volume rm sotto-ci_pgdata sotto-ci_s3data >/dev/null 2>&1 || true
+    docker volume rm \${CI_NAME}_pgdata \${CI_NAME}_s3data >/dev/null 2>&1 || true
     docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
     for i in \$(seq 1 60); do
-      [ "\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" != "000" ] && break
+      [ "\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:\$S3_PORT/)" != "000" ] && break
       sleep 1
     done
-    curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\\n" http://localhost:8333/sotto-files
-    curl -s -X PUT -o /dev/null http://localhost:8333/sotto-test
+    curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\\n" http://localhost:\$S3_PORT/sotto-files
+    curl -s -X PUT -o /dev/null http://localhost:\$S3_PORT/sotto-test
   """
 }
 
@@ -72,22 +101,15 @@ pipeline {
     timeout(time: 100, unit: 'MINUTES')
     // A newer push to the same branch or PR stops the older build: nobody needs its result.
     disableConcurrentBuilds(abortPrevious: true)
-    // The api and web pipelines share the host's ports (5432, 4000, 8333…): one at a time.
-    lock(resource: 'sotto-ci-host')
     buildDiscarder(logRotator(numToKeepStr: '30'))
   }
 
   environment {
     AWS_REGION = 'eu-west-2'
     COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
-    // Compose names the network after the project: sotto-ci_default.
-    COMPOSE_PROJECT_NAME = 'sotto-ci'
-    NET = 'sotto-ci_default'
     DB = 'postgresql://sotto:sotto@postgres:5432/sotto'
     MQ = 'amqp://sotto:sotto@rabbitmq:5672'
     S3_ENV = '-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci'
-    TEST_DATABASE_URL = 'postgresql://sotto:sotto@localhost:5432/postgres'
-    TEST_S3_ENDPOINT = 'http://localhost:8333'
     S3_FORCE_PATH_STYLE = 'true'
     REQUIRE_INTEGRATION = '1'
     // Kept between builds (outside the workspace): the Whisper tiny model and pip/uv downloads.
@@ -95,6 +117,10 @@ pipeline {
   }
 
   stages {
+    stage('Slot') {
+      steps { script { useSlot() } }
+    }
+
     // Everything that doesn't need the built images runs side by side: the secrets scan, the
     // code checks, the transcriber's tests and the image builds. On a many-core host this is
     // most of the time saved.
@@ -170,9 +196,9 @@ pipeline {
             script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
             sh '''
               V="--build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT"
-              docker build $V --build-arg APP=api -t sotto-api:ci . & a=$!
-              docker build $V --build-arg APP=worker -t sotto-worker:ci . & w=$!
-              docker build $V -t sotto-transcriber:ci services/transcriber & t=$!
+              docker build $V --build-arg APP=api -t sotto-api:$IMG . & a=$!
+              docker build $V --build-arg APP=worker -t sotto-worker:$IMG . & w=$!
+              docker build $V -t sotto-transcriber:$IMG services/transcriber & t=$!
               wait $a && wait $w && wait $t
             '''
           }
@@ -186,17 +212,17 @@ pipeline {
       steps {
         script { freshServices() }
         sh '''
-          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
-          docker run -d --name sotto-ci-api --network $NET -p 4000:4000 $S3_ENV \
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:$IMG sh scripts/migrate.sh
+          docker run -d --name $CI_NAME-api --network $NET -p $API_PORT:4000 $S3_ENV \
             -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
-            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 sotto-api:ci
-          docker run -d --name sotto-ci-worker --network $NET -p 4100:4100 -e RABBITMQ_URL=$MQ \
-            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
-          docker run -d --name sotto-ci-transcriber --network $NET -p 5000:5000 -e RABBITMQ_URL=$MQ \
-            -e TRANSCRIBER_ENGINE=fake sotto-transcriber:ci
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:$API_PORT sotto-api:$IMG
+          docker run -d --name $CI_NAME-worker --network $NET -p $WORKER_PORT:4100 -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:$IMG
+          docker run -d --name $CI_NAME-transcriber --network $NET -p $TRANS_PORT:5000 -e RABBITMQ_URL=$MQ \
+            -e TRANSCRIBER_ENGINE=fake sotto-transcriber:$IMG
           for i in $(seq 1 45); do
-            if curl -fsS localhost:4000/readyz && curl -fsS localhost:4100/readyz && curl -fsS localhost:5000/readyz; then
-              for c in sotto-ci-api sotto-ci-worker sotto-ci-transcriber; do
+            if curl -fsS localhost:$API_PORT/readyz && curl -fsS localhost:$WORKER_PORT/readyz && curl -fsS localhost:$TRANS_PORT/readyz; then
+              for c in $CI_NAME-api $CI_NAME-worker $CI_NAME-transcriber; do
                 for j in $(seq 1 20); do
                   [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = healthy ] && break; sleep 3
                 done
@@ -231,22 +257,22 @@ pipeline {
               "[1]aresample=16000,adelay=3000[a];[2]aresample=16000,adelay=1230000[b];[3]aresample=16000,adelay=1770000[c];[0][a][b][c]amix=inputs=4:duration=first:normalize=0" \
               -ac 1 -c:a libopus -b:a 32k /out/sotto-ci-meeting.ogg
             chown $HOST_IDS /out/sotto-ci-meeting.ogg'
-          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
-          docker run -d --name sotto-ci-api --network $NET -p 4000:4000 $S3_ENV \
-            -e S3_PUBLIC_ENDPOINT=http://localhost:8333 -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 \
-            -e RABBITMQ_URL=$MQ -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
-            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off sotto-api:ci
-          docker run -d --name sotto-ci-worker --network $NET -p 4100:4100 $S3_ENV -e RABBITMQ_URL=$MQ \
-            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
-          docker run -d --name sotto-ci-transcriber --network $NET -p 5000:5000 $S3_ENV -e RABBITMQ_URL=$MQ \
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:$IMG sh scripts/migrate.sh
+          docker run -d --name $CI_NAME-api --network $NET -p $API_PORT:4000 $S3_ENV \
+            -e S3_PUBLIC_ENDPOINT=http://localhost:$S3_PORT -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 \
+            -e RABBITMQ_URL=$MQ -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:$API_PORT \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off sotto-api:$IMG
+          docker run -d --name $CI_NAME-worker --network $NET -p $WORKER_PORT:4100 $S3_ENV -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:$IMG
+          docker run -d --name $CI_NAME-transcriber --network $NET -p $TRANS_PORT:5000 $S3_ENV -e RABBITMQ_URL=$MQ \
             -e TRANSCRIBER_ENGINE=faster-whisper -e WHISPER_MODEL=tiny -v "$CACHE/whisper:/models" \
-            sotto-transcriber:ci
+            sotto-transcriber:$IMG
           for i in $(seq 1 90); do
-            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null \
-              && curl -fsS localhost:5000/readyz >/dev/null && break
+            curl -fsS localhost:$API_PORT/readyz >/dev/null && curl -fsS localhost:$WORKER_PORT/readyz >/dev/null \
+              && curl -fsS localhost:$TRANS_PORT/readyz >/dev/null && break
             sleep 2
           done
-          API_URL=http://localhost:4000 MAILPIT_URL=http://localhost:8025 \
+          API_URL=http://localhost:$API_PORT MAILPIT_URL=http://localhost:$MAILPIT_PORT \
             MEETING_FILE=$PWD/.ci/sotto-ci-meeting.ogg node scripts/ingestion-check.ts
         '''
       }
@@ -261,23 +287,23 @@ pipeline {
         script { freshServices() }
         sh '''
           docker compose -f compose.deps.yaml --profile ai up -d ollama
-          for i in $(seq 1 60); do curl -fsS localhost:11434/api/version >/dev/null && break; sleep 1; done
-          curl -fsS localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' | tail -1
-          curl -fsS localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' | head -c 80; echo
+          for i in $(seq 1 60); do curl -fsS localhost:$OLLAMA_PORT/api/version >/dev/null && break; sleep 1; done
+          curl -fsS localhost:$OLLAMA_PORT/api/pull -d '{"model":"nomic-embed-text"}' | tail -1
+          curl -fsS localhost:$OLLAMA_PORT/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' | head -c 80; echo
           AI="-e AI_EMBEDDINGS=ollama:nomic-embed-text -e OLLAMA_URL=http://ollama:11434"
-          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
-          docker run -d --name sotto-ci-api --network $NET -p 4000:4000 $S3_ENV $AI \
+          docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:$IMG sh scripts/migrate.sh
+          docker run -d --name $CI_NAME-api --network $NET -p $API_PORT:4000 $S3_ENV $AI \
             -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL=$MQ \
-            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
-            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off -e ASK_RATE_PER_MINUTE=1000 sotto-api:ci
-          docker run -d --name sotto-ci-worker --network $NET -p 4100:4100 $S3_ENV $AI -e RABBITMQ_URL=$MQ \
-            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 sotto-worker:ci
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:$API_PORT \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off -e ASK_RATE_PER_MINUTE=1000 sotto-api:$IMG
+          docker run -d --name $CI_NAME-worker --network $NET -p $WORKER_PORT:4100 $S3_ENV $AI -e RABBITMQ_URL=$MQ \
+            -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 sotto-worker:$IMG
           for i in $(seq 1 90); do
-            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null && break
+            curl -fsS localhost:$API_PORT/readyz >/dev/null && curl -fsS localhost:$WORKER_PORT/readyz >/dev/null && break
             sleep 2
           done
-          API_URL=http://localhost:4000 MAILPIT_URL=http://localhost:8025 node scripts/eval.ts
-          OLLAMA_URL=http://localhost:11434 node scripts/eval-similarity.ts || true
+          API_URL=http://localhost:$API_PORT MAILPIT_URL=http://localhost:$MAILPIT_PORT node scripts/eval.ts
+          OLLAMA_URL=http://localhost:$OLLAMA_PORT node scripts/eval-similarity.ts || true
         '''
       }
       post { failure { script { serviceLogs() } } }
@@ -293,12 +319,12 @@ pipeline {
           ECR_REGISTRY="${ECR_REGISTRY:-$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com}"
           aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
           for svc in api worker transcriber; do
-            ARCH=$(docker image inspect -f '{{.Architecture}}' sotto-$svc:ci)
-            [ "$ARCH" = arm64 ] || { echo "sotto-$svc:ci is $ARCH; the demo needs arm64"; exit 1; }
+            ARCH=$(docker image inspect -f '{{.Architecture}}' sotto-$svc:$IMG)
+            [ "$ARCH" = arm64 ] || { echo "sotto-$svc:$IMG is $ARCH; the demo needs arm64"; exit 1; }
           done
           for svc in api worker transcriber; do
             for t in $TAG main; do
-              docker tag sotto-$svc:ci $ECR_REGISTRY/sotto/$svc:$t
+              docker tag sotto-$svc:$IMG $ECR_REGISTRY/sotto/$svc:$t
               docker push --quiet $ECR_REGISTRY/sotto/$svc:$t
             done
           done
@@ -333,11 +359,13 @@ pipeline {
 
   post {
     always {
+      // Only this build's slot; nothing to clean if it never got one.
       sh '''
-        docker rm -f sotto-ci-api sotto-ci-worker sotto-ci-transcriber >/dev/null 2>&1 || true
+        [ -n "$CI_NAME" ] || exit 0
+        docker rm -f $CI_NAME-api $CI_NAME-worker $CI_NAME-transcriber >/dev/null 2>&1 || true
         # The Ollama model volume is kept (it's a 275 MB download); everything else goes.
         docker compose -f compose.deps.yaml --profile ai down >/dev/null 2>&1 || true
-        docker volume rm sotto-ci_pgdata sotto-ci_s3data >/dev/null 2>&1 || true
+        docker volume rm ${CI_NAME}_pgdata ${CI_NAME}_s3data >/dev/null 2>&1 || true
       '''
       cleanWs()
     }
