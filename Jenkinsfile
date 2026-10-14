@@ -8,8 +8,8 @@
 // "Lockable Resources" plugin. Everything else (Python, ffmpeg, Postgres, Ollama…) runs in
 // containers, so the host stays clean.
 //
-// Order: quick checks first (they fail fastest), then the image checks that boot the real
-// services: smoke, a 30-minute recording through real transcription, and the eval set with a
+// Order: the code checks, transcriber tests and image builds side by side, then the image
+// checks that boot the real services: smoke, a 30-minute recording through real transcription, and the eval set with a
 // real embedding model.
 
 /** Runs on every check stage's failure: the services' last lines, so the log says why. */
@@ -38,6 +38,31 @@ def freshServices() {
     curl -s -X PUT -o /dev/null -w "bucket: %{http_code}\\n" http://localhost:8333/sotto-files
     curl -s -X PUT -o /dev/null http://localhost:8333/sotto-test
   """
+}
+
+/**
+ * Whether there's a demo to deploy to. `terraform destroy` removes everything, the image
+ * repositories included, so while it's down main skips the push and the deploy (they don't
+ * fail); after `terraform apply`, Build main once and both run.
+ */
+def demoIsUp() {
+  if (env.DEMO_UP == null) {
+    // 0: up. 3: down. Anything else (say, missing AWS permissions) fails the build rather than
+    // quietly skipping the deploy.
+    def rc = sh(returnStatus: true, script: '''
+      out=$(aws ecr describe-repositories --repository-names sotto/api 2>&1) || {
+        echo "$out" | grep -q RepositoryNotFoundException && exit 3; echo "$out"; exit 1; }
+      n=$(aws ec2 describe-instances --filters Name=tag:sotto-role,Values=demo \
+        Name=instance-state-name,Values=running --query 'length(Reservations)' --output text) || exit 1
+      [ "$n" != 0 ] || exit 3
+    ''')
+    if (rc != 0 && rc != 3) { error("Couldn't check the demo with AWS (exit ${rc}); see above.") }
+    env.DEMO_UP = rc == 0 ? 'true' : 'false'
+    if (rc == 3) {
+      echo 'The demo is down (no ECR repository or running demo server): skipping push and deploy.'
+    }
+  }
+  return env.DEMO_UP == 'true'
 }
 
 pipeline {
@@ -70,77 +95,88 @@ pipeline {
   }
 
   stages {
-    stage('Secrets scan') {
-      steps {
-        sh 'docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --redact --verbose'
-      }
-    }
+    // Everything that doesn't need the built images runs side by side: the secrets scan, the
+    // code checks, the transcriber's tests and the image builds. On a many-core host this is
+    // most of the time saved.
+    stage('Checks and images') {
+      parallel {
+        stage('Secrets scan') {
+          steps {
+            sh 'docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --redact --verbose'
+          }
+        }
 
-    stage('Start test databases') {
-      steps { script { freshServices() } }
-    }
+        stage('Code') {
+          stages {
+            stage('Install and build') {
+              steps {
+                script { freshServices() }
+                sh 'pnpm install --frozen-lockfile'
+                sh 'pnpm build'
+              }
+            }
+            // Lint, format, typecheck, unit + integration tests and the openapi drift check at
+            // once; each prints its own block, and any failure fails the stage.
+            stage('Lint, typecheck, test, openapi') {
+              steps {
+                sh '''
+                  mkdir -p .ci
+                  run() { name=$1; shift; ( "$@" > ".ci/$name.log" 2>&1; echo $? > ".ci/$name.rc" ) & }
+                  run lint pnpm lint
+                  run format pnpm format:check
+                  # tsc directly: the package scripts run `prisma generate` first, which would
+                  # rewrite the client while the tests are loading it. Build already generated it.
+                  run typecheck pnpm --filter './apps/**' --filter './packages/**' -r exec tsc -p tsconfig.json --noEmit
+                  run test pnpm test
+                  run openapi sh -c 'pnpm openapi && git diff --exit-code openapi.json || {
+                    echo "openapi.json is stale. Run pnpm build && pnpm openapi and commit it."; exit 1; }'
+                  wait
+                  failed=""
+                  for n in lint format typecheck test openapi; do
+                    echo "===== $n (exit $(cat .ci/$n.rc))"; cat ".ci/$n.log"
+                    [ "$(cat .ci/$n.rc)" = 0 ] || failed="$failed $n"
+                  done
+                  [ -z "$failed" ] || { echo "Failed:$failed"; exit 1; }
+                '''
+              }
+            }
+          }
+        }
 
-    stage('Install') {
-      steps { sh 'pnpm install --frozen-lockfile' }
-    }
+        // The transcriber's own tests (ruff, pytest, the real Whisper test) in a Python container
+        // with ffmpeg and espeak-ng. Files it writes are handed back to Jenkins' user.
+        stage('Transcriber') {
+          steps {
+            sh '''
+              mkdir -p "$CACHE/hf" "$CACHE/uv"
+              docker run --rm -v "$PWD/services/transcriber:/src" -w /src \
+                -v "$CACHE/hf:/root/.cache/huggingface" -v "$CACHE/uv:/root/.cache/uv" \
+                -e RUN_WHISPER_TESTS=1 -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+                -e HOST_IDS="$(id -u):$(id -g)" \
+                ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c '
+                  trap "chown -R $HOST_IDS /src" EXIT
+                  apt-get update -qq && apt-get install -y -qq ffmpeg espeak-ng >/dev/null
+                  uv sync --locked && uv run ruff check . && uv run ruff format --check . &&
+                  uv run pytest -q -p no:cacheprovider --junitxml=pytest.xml'
+            '''
+          }
+          post { always { junit allowEmptyResults: true, testResults: 'services/transcriber/pytest.xml' } }
+        }
 
-    stage('Build') {
-      steps { sh 'pnpm build' }
-    }
-
-    stage('Lint and typecheck') {
-      steps {
-        sh 'pnpm lint'
-        sh 'pnpm format:check'
-        sh 'pnpm typecheck'
-      }
-    }
-
-    stage('Test') {
-      steps { sh 'pnpm test' }
-    }
-
-    stage('openapi.json is up to date') {
-      steps {
-        sh '''
-          pnpm openapi
-          git diff --exit-code openapi.json || {
-            echo "openapi.json is stale. Run 'pnpm build && pnpm openapi' and commit it."; exit 1; }
-        '''
-      }
-    }
-
-    // The transcriber's own tests (ruff, pytest, the real Whisper test) in a Python container
-    // with ffmpeg and espeak-ng. Files it writes are handed back to Jenkins' user.
-    stage('Transcriber') {
-      steps {
-        sh '''
-          mkdir -p "$CACHE/hf" "$CACHE/uv"
-          docker run --rm -v "$PWD/services/transcriber:/src" -w /src \
-            -v "$CACHE/hf:/root/.cache/huggingface" -v "$CACHE/uv:/root/.cache/uv" \
-            -e RUN_WHISPER_TESTS=1 -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
-            -e HOST_IDS="$(id -u):$(id -g)" \
-            ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c '
-              trap "chown -R $HOST_IDS /src" EXIT
-              apt-get update -qq && apt-get install -y -qq ffmpeg espeak-ng >/dev/null
-              uv sync --locked && uv run ruff check . && uv run ruff format --check . &&
-              uv run pytest -q -p no:cacheprovider --junitxml=pytest.xml'
-        '''
-      }
-      post { always { junit allowEmptyResults: true, testResults: 'services/transcriber/pytest.xml' } }
-    }
-
-    // Built once, with the release's version baked in: the Jenkins host is arm64 like the demo,
-    // so on main these same images are tagged and pushed rather than built a second time.
-    stage('Build images') {
-      steps {
-        script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
-        sh '''
-          V="--build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT"
-          docker build $V --build-arg APP=api -t sotto-api:ci .
-          docker build $V --build-arg APP=worker -t sotto-worker:ci .
-          docker build $V -t sotto-transcriber:ci services/transcriber
-        '''
+        // Built once, with the release's version baked in: the Jenkins host is arm64 like the
+        // demo, so on main these same images are tagged and pushed rather than built again.
+        stage('Build images') {
+          steps {
+            script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
+            sh '''
+              V="--build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT"
+              docker build $V --build-arg APP=api -t sotto-api:ci . & a=$!
+              docker build $V --build-arg APP=worker -t sotto-worker:ci . & w=$!
+              docker build $V -t sotto-transcriber:ci services/transcriber & t=$!
+              wait $a && wait $w && wait $t
+            '''
+          }
+        }
       }
     }
 
@@ -248,13 +284,14 @@ pipeline {
     }
 
     stage('Push images') {
-      when { branch 'main' }
+      when {
+        branch 'main'
+        expression { demoIsUp() }
+      }
       steps {
         sh '''
           ECR_REGISTRY="${ECR_REGISTRY:-$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com}"
           aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
-          # The repositories live in sotto-platform's terraform/keep stack, so they survive
-          # `terraform destroy` of the demo.
           for svc in api worker transcriber; do
             ARCH=$(docker image inspect -f '{{.Architecture}}' sotto-$svc:ci)
             [ "$ARCH" = arm64 ] || { echo "sotto-$svc:ci is $ARCH; the demo needs arm64"; exit 1; }
@@ -270,7 +307,10 @@ pipeline {
     }
 
     stage('Deploy to demo') {
-      when { branch 'main' }
+      when {
+        branch 'main'
+        expression { demoIsUp() }
+      }
       steps {
         sh '''
           ID=$(aws ssm send-command --document-name sotto-deploy \
