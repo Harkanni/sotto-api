@@ -130,12 +130,16 @@ pipeline {
       post { always { junit allowEmptyResults: true, testResults: 'services/transcriber/pytest.xml' } }
     }
 
+    // Built once, with the release's version baked in: the Jenkins host is arm64 like the demo,
+    // so on main these same images are tagged and pushed rather than built a second time.
     stage('Build images') {
       steps {
+        script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
         sh '''
-          docker build --build-arg APP=api -t sotto-api:ci .
-          docker build --build-arg APP=worker -t sotto-worker:ci .
-          docker build -t sotto-transcriber:ci services/transcriber
+          V="--build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT"
+          docker build $V --build-arg APP=api -t sotto-api:ci .
+          docker build $V --build-arg APP=worker -t sotto-worker:ci .
+          docker build $V -t sotto-transcriber:ci services/transcriber
         '''
       }
     }
@@ -180,7 +184,8 @@ pipeline {
         script { freshServices() }
         sh '''
           mkdir -p "$CACHE/whisper" && chmod 777 "$CACHE/whisper"
-          docker run --rm -v /tmp:/out debian:bookworm-slim sh -c '
+          mkdir -p "$PWD/.ci"
+          docker run --rm -v "$PWD/.ci:/out" -e HOST_IDS="$(id -u):$(id -g)" debian:bookworm-slim sh -c '
             apt-get update -qq && apt-get install -y -qq ffmpeg espeak-ng >/dev/null
             espeak-ng -s 130 -w /tmp/s1.wav "Good morning everyone. This is the design review for the Lagos launch."
             espeak-ng -s 130 -w /tmp/s2.wav "Next item. The budget for the second quarter is approved."
@@ -189,7 +194,7 @@ pipeline {
               -i /tmp/s1.wav -i /tmp/s2.wav -i /tmp/s3.wav -filter_complex \
               "[1]aresample=16000,adelay=3000[a];[2]aresample=16000,adelay=1230000[b];[3]aresample=16000,adelay=1770000[c];[0][a][b][c]amix=inputs=4:duration=first:normalize=0" \
               -ac 1 -c:a libopus -b:a 32k /out/sotto-ci-meeting.ogg
-            chmod 644 /out/sotto-ci-meeting.ogg'
+            chown $HOST_IDS /out/sotto-ci-meeting.ogg'
           docker run --rm --network $NET -e DATABASE_URL=$DB sotto-api:ci sh scripts/migrate.sh
           docker run -d --name sotto-ci-api --network $NET -p 4000:4000 $S3_ENV \
             -e S3_PUBLIC_ENDPOINT=http://localhost:8333 -e DATABASE_URL=$DB -e REDIS_URL=redis://redis:6379 \
@@ -206,7 +211,7 @@ pipeline {
             sleep 2
           done
           API_URL=http://localhost:4000 MAILPIT_URL=http://localhost:8025 \
-            MEETING_FILE=/tmp/sotto-ci-meeting.ogg node scripts/ingestion-check.ts
+            MEETING_FILE=$PWD/.ci/sotto-ci-meeting.ogg node scripts/ingestion-check.ts
         '''
       }
       post { failure { script { serviceLogs() } } }
@@ -242,26 +247,24 @@ pipeline {
       post { failure { script { serviceLogs() } } }
     }
 
-    stage('Build and push images') {
+    stage('Push images') {
       when { branch 'main' }
       steps {
-        script { env.TAG = "sha-${env.GIT_COMMIT.take(7)}" }
         sh '''
           ECR_REGISTRY="${ECR_REGISTRY:-$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com}"
           aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
-
-          docker buildx build --platform linux/arm64 --build-arg APP=api \
-            --build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT \
-            -t $ECR_REGISTRY/sotto/api:$TAG -t $ECR_REGISTRY/sotto/api:main --push .
-
-          docker buildx build --platform linux/arm64 --build-arg APP=worker \
-            --build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT \
-            -t $ECR_REGISTRY/sotto/worker:$TAG -t $ECR_REGISTRY/sotto/worker:main --push .
-
-          docker buildx build --platform linux/arm64 \
-            --build-arg APP_VERSION=$TAG --build-arg GIT_SHA=$GIT_COMMIT \
-            -t $ECR_REGISTRY/sotto/transcriber:$TAG -t $ECR_REGISTRY/sotto/transcriber:main \
-            --push services/transcriber
+          # The repositories live in sotto-platform's terraform/keep stack, so they survive
+          # `terraform destroy` of the demo.
+          for svc in api worker transcriber; do
+            ARCH=$(docker image inspect -f '{{.Architecture}}' sotto-$svc:ci)
+            [ "$ARCH" = arm64 ] || { echo "sotto-$svc:ci is $ARCH; the demo needs arm64"; exit 1; }
+          done
+          for svc in api worker transcriber; do
+            for t in $TAG main; do
+              docker tag sotto-$svc:ci $ECR_REGISTRY/sotto/$svc:$t
+              docker push --quiet $ECR_REGISTRY/sotto/$svc:$t
+            done
+          done
         '''
       }
     }
@@ -295,7 +298,6 @@ pipeline {
         # The Ollama model volume is kept (it's a 275 MB download); everything else goes.
         docker compose -f compose.deps.yaml --profile ai down >/dev/null 2>&1 || true
         docker volume rm sotto-ci_pgdata sotto-ci_s3data >/dev/null 2>&1 || true
-        rm -f /tmp/sotto-ci-meeting.ogg
       '''
       cleanWs()
     }
