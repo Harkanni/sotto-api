@@ -128,7 +128,9 @@ pipeline {
       parallel {
         stage('Secrets scan') {
           steps {
-            sh 'docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --redact --verbose'
+            // Pinned: with `latest`, a new release could change the rules (or break the scan)
+            // without a commit here. v8.30.1 is what `latest` was on 2026-10-15. Bump on purpose.
+            sh 'docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 dir /repo --redact --verbose'
           }
         }
 
