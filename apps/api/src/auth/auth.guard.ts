@@ -13,14 +13,23 @@ import type { ApiRequest } from '../common/request.js';
 import { APP_CONFIG, type ApiConfig } from '../config.js';
 import { PrismaService } from '../core.module.js';
 import { AUTH, type Auth } from './auth.js';
+import { verifyBotToken } from '../notetaker/signing.js';
 import { CSRF_HEADER, verifyCsrfToken } from './csrf.js';
 import { atLeast } from './roles.js';
 
 const PUBLIC = 'sotto:public';
 const MIN_ROLE = 'sotto:min-role';
+const ALLOW_BOT = 'sotto:allow-bot';
 
 /** Open to anyone: health, status, sign-in methods, invite previews. */
 export const Public = () => SetMetadata(PUBLIC, true);
+
+/**
+ * Also open to a notetaker bot with `Authorization: Bot <token>` (ADR 0035): only the live
+ * session in the route's `:id` that its assignment records into, acting as the person who sent
+ * it. Only the live audio route has it.
+ */
+export const AllowBot = () => SetMetadata(ALLOW_BOT, true);
 
 /** Needs an active workspace in which the caller has at least this role. */
 export const RequireRole = (role: Role) => SetMetadata(MIN_ROLE, role);
@@ -55,7 +64,17 @@ export class AuthGuard implements CanActivate {
     const targets = [context.getHandler(), context.getClass()];
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC, targets)) return true;
 
-    const req = context.switchToHttp().getRequest<ApiRequest>();
+    const req = context.switchToHttp().getRequest<ApiRequest & { params?: { id?: string } }>();
+    const header = req.headers.authorization;
+    if (
+      typeof header === 'string' &&
+      header.startsWith('Bot ') &&
+      this.reflector.getAllAndOverride<boolean>(ALLOW_BOT, targets)
+    ) {
+      // A bot's token rides on no cookie, so there's no cross-site request to forge (no CSRF).
+      req.auth = await this.botAuth(header.slice(4).trim(), req.params?.id, req.ip ?? null);
+      return this.roleCheck(req, targets);
+    }
     const session = await this.auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
     if (!session) throw new ApiException(401, 'UNAUTHENTICATED', 'Sign in to continue.');
 
@@ -90,9 +109,16 @@ export class AuthGuard implements CanActivate {
       }
     }
 
+    return this.roleCheck(req, targets);
+  }
+
+  private roleCheck(
+    req: ApiRequest,
+    targets: Parameters<Reflector['getAllAndOverride']>[1],
+  ): boolean {
     const minimum = this.reflector.getAllAndOverride<Role | undefined>(MIN_ROLE, targets);
     if (minimum) {
-      const workspace = req.auth.workspace;
+      const workspace = req.auth?.workspace;
       if (!workspace) {
         throw new ApiException(403, 'NO_WORKSPACE', 'Create or join a workspace first.');
       }
@@ -101,5 +127,51 @@ export class AuthGuard implements CanActivate {
       }
     }
     return true;
+  }
+
+  /**
+   * A bot's token names one assignment; it's good only while that assignment is in its call and
+   * only for the call's live session, and it acts as the person who sent the bot (who must still
+   * be in the workspace).
+   */
+  private async botAuth(
+    token: string,
+    sessionId: string | undefined,
+    ip: string | null,
+  ): Promise<NonNullable<ApiRequest['auth']>> {
+    const refused = () =>
+      new ApiException(401, 'BOT_TOKEN_INVALID', 'This notetaker can’t send audio here.');
+    const secret = this.config.MEETING_BOT_SECRET;
+    const verified = secret ? verifyBotToken(secret, token) : null;
+    if (!verified) throw refused();
+    const assignment = await this.prisma.client.botAssignment.findUnique({
+      where: { id: verified.assignmentId },
+      select: {
+        status: true,
+        workspaceId: true,
+        liveSessionId: true,
+        connection: {
+          select: {
+            user: {
+              select: { id: true, email: true, name: true, emailVerified: true, image: true },
+            },
+          },
+        },
+      },
+    });
+    if (!assignment || assignment.status !== 'IN_CALL' || !sessionId) throw refused();
+    if (assignment.liveSessionId !== sessionId) throw refused();
+    const user = assignment.connection.user;
+    const membership = await this.prisma.client.membership.findUnique({
+      where: { workspaceId_userId: { workspaceId: assignment.workspaceId, userId: user.id } },
+      select: { role: true },
+    });
+    if (!membership) throw refused();
+    return {
+      user: { ...user, image: user.image ?? null },
+      sessionId: `bot:${verified.assignmentId}`,
+      workspace: { id: assignment.workspaceId, role: membership.role },
+      ip,
+    };
   }
 }

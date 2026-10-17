@@ -158,6 +158,57 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
     return this.present(viewer, session);
   }
 
+  /**
+   * The notetaker was let into a call (ADR 0035): the meeting, owned by whoever sent it, and a
+   * BOT session its audio goes to through the same chunk API. Private to them until it's saved,
+   * like a Listen capture (ADR 0029). Throws the usage refusal when the allowance is used up.
+   */
+  async startForBot(input: {
+    workspaceId: string;
+    userId: string;
+    title: string;
+  }): Promise<LiveSession> {
+    await this.usage.checkUpload(input.workspaceId, 'AUDIO', 0);
+    const id = newFileId();
+    const { file, session } = await tenantTransaction(this.db(input.workspaceId), async (tx) => {
+      const file = await tx.file.create({
+        data: {
+          id,
+          workspaceId: input.workspaceId,
+          collectionId: null,
+          ownerId: input.userId,
+          kind: 'AUDIO',
+          source: 'BOT',
+          title: input.title,
+          sensitivity: 'INTERNAL',
+          storageKey: this.storage.keys.original(input.workspaceId, id, 'live.wav'),
+          mime: 'audio/wav',
+          sizeBytes: 0n,
+          durationMs: 0,
+        },
+      });
+      const session = await tx.liveSession.create({
+        data: {
+          workspaceId: input.workspaceId,
+          fileId: file.id,
+          startedById: input.userId,
+          source: 'BOT',
+          inputs: ['call'],
+        },
+      });
+      return { file, session };
+    });
+    await this.files.emit(file, 'status');
+    return session;
+  }
+
+  /** Ends a session on the system's behalf (the notetaker left): saved exactly like End. */
+  async endBySystem(workspaceId: string, sessionId: string): Promise<void> {
+    const session = await this.db(workspaceId).liveSession.findFirst({ where: { id: sessionId } });
+    if (!session || !OPEN.includes(session.status as never)) return;
+    await this.finish(session, null, null);
+  }
+
   // ── Reading ────────────────────────────────────────────────────────────────────────────────
 
   /** The session if the viewer can open its meeting; 404 otherwise (as for files). */

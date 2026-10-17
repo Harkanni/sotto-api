@@ -68,6 +68,18 @@ export const apiEnv = baseEnv
      * few seconds of audio at a time; recorded files still go through the queue.
      */
     TRANSCRIBER_URL: z.url().default('http://localhost:5000'),
+    /**
+     * The notetaker bot (ADR 0035): `sample`, the labelled stand-in that joins no real call; the
+     * self-hosted Google Meet bot arrives in Phase 7 M7. Unset: the notetaker is unavailable,
+     * and the app says so.
+     */
+    MEETING_BOT: z.preprocess(blankAsUnset, z.enum(['sample']).optional()),
+    /** Signs bot tokens and the bot's webhook calls; shared with the bot service. 32+ chars. */
+    MEETING_BOT_SECRET: z.preprocess(blankAsUnset, z.string().min(32).optional()),
+    /** Where a bot reaches the api (its webhook and audio); the public origin when unset. */
+    MEETING_BOT_CALLBACK_URL: z.preprocess(blankAsUnset, z.url().optional()),
+    /** The name everyone in the call sees. */
+    MEETING_BOT_NAME: z.string().trim().min(1).max(60).default('Sotto Notetaker'),
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()

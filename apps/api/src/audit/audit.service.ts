@@ -11,6 +11,7 @@ import { PrismaService } from '../core.module.js';
 export const AUDIT_ACTIONS = [
   'workspace.created',
   'workspace.renamed',
+  'workspace.bots_changed',
   'member.joined',
   'member.role_changed',
   'member.removed',
@@ -44,6 +45,11 @@ export const AUDIT_ACTIONS = [
   'billing.plan_changed',
   'billing.payment_failed',
   'billing.cancelled',
+  'calendar.connected',
+  'calendar.disconnected',
+  'calendar.auto_join_changed',
+  'bot.sent',
+  'bot.skipped',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -56,7 +62,8 @@ export type AuditTarget =
   | 'audit'
   | 'file'
   | 'conversation'
-  | 'subscription';
+  | 'subscription'
+  | 'calendar';
 
 export interface AuditEntry {
   action: AuditAction;

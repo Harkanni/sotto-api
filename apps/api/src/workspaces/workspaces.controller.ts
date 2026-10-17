@@ -20,6 +20,7 @@ import { ApiErrors } from '../common/errors.js';
 import { AuthHeaders, Ctx, type RequestAuth, workspaceOf } from '../common/request.js';
 import { PrismaService } from '../core.module.js';
 import { RoleSchema } from '../me/me.controller.js';
+import { NOTETAKER_SWITCH, type NotetakerSwitch } from '../notetaker/switch.js';
 
 export const WorkspaceSummary = z
   .object({
@@ -30,6 +31,8 @@ export const WorkspaceSummary = z
     /** True for the session's active workspace. */
     active: z.boolean(),
     members: z.number().int(),
+    /** The notetaker may join calls for people here (admins can turn it off; ADR 0035). */
+    meetingBots: z.boolean(),
   })
   .meta({ id: 'WorkspaceSummary' });
 
@@ -42,7 +45,16 @@ const WorkspaceName = z
   .max(60, 'Keep the name under 60 characters.');
 
 export const CreateWorkspace = z.object({ name: WorkspaceName }).meta({ id: 'CreateWorkspace' });
-export const UpdateWorkspace = z.object({ name: WorkspaceName }).meta({ id: 'UpdateWorkspace' });
+export const UpdateWorkspace = z
+  .object({
+    name: WorkspaceName.optional(),
+    /** Let the notetaker join calls for people in this workspace. */
+    meetingBots: z.boolean().optional(),
+  })
+  .refine((body) => body.name !== undefined || body.meetingBots !== undefined, {
+    message: 'Change the name or the notetaker setting.',
+  })
+  .meta({ id: 'UpdateWorkspace' });
 
 export const IdParam = z.string().min(1).max(64);
 
@@ -66,6 +78,7 @@ export class WorkspacesController {
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(NOTETAKER_SWITCH) private readonly notetaker: NotetakerSwitch,
   ) {}
 
   @Get('workspaces')
@@ -77,7 +90,14 @@ export class WorkspacesController {
       orderBy: { createdAt: 'asc' },
       select: {
         role: true,
-        workspace: { select: { id: true, name: true, _count: { select: { memberships: true } } } },
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+            meetingBots: true,
+            _count: { select: { memberships: true } },
+          },
+        },
       },
     });
     return memberships.map(({ role, workspace }) => ({
@@ -86,6 +106,7 @@ export class WorkspacesController {
       role,
       active: workspace.id === auth.workspace?.id,
       members: workspace._count.memberships,
+      meetingBots: workspace.meetingBots,
     }));
   }
 
@@ -108,7 +129,14 @@ export class WorkspacesController {
       target: { type: 'workspace', id: created.id },
       meta: { name: body.name },
     });
-    return { id: created.id, name: created.name, role: 'owner', active: true, members: 1 };
+    return {
+      id: created.id,
+      name: created.name,
+      role: 'owner',
+      active: true,
+      members: 1,
+      meetingBots: true,
+    };
   }
 
   @Post('workspaces/:id/activate')
@@ -125,7 +153,9 @@ export class WorkspacesController {
       where: { workspaceId_userId: { workspaceId: id, userId: auth.user.id } },
       select: {
         role: true,
-        workspace: { select: { name: true, _count: { select: { memberships: true } } } },
+        workspace: {
+          select: { name: true, meetingBots: true, _count: { select: { memberships: true } } },
+        },
       },
     });
     return {
@@ -134,12 +164,18 @@ export class WorkspacesController {
       role: membership.role as Role,
       active: true,
       members: membership.workspace._count.memberships,
+      meetingBots: membership.workspace.meetingBots,
     };
   }
 
   @Patch('workspace')
   @RequireRole('admin')
-  @ApiOperation({ summary: 'Rename the active workspace (admins and owners).' })
+  @ApiOperation({
+    summary:
+      'Rename the active workspace, or turn the notetaker on or off for everyone in it (admins ' +
+      'and owners). Off: calls not started yet are skipped, and bots in calls leave (what they ' +
+      'recorded is saved).',
+  })
   @ApiOkResponse({ standardSchema: WorkspaceSummary })
   async update(
     @Ctx() auth: RequestAuth,
@@ -148,20 +184,41 @@ export class WorkspacesController {
   ): Promise<WorkspaceSummary> {
     const workspace = workspaceOf(auth);
     const db = forWorkspace(this.prisma.client, workspace.id);
-    const before = await db.workspace.findFirstOrThrow({ select: { name: true } });
-    await this.auth.api.updateOrganization({
-      body: { organizationId: workspace.id, data: { name: body.name } },
-      headers,
+    const before = await db.workspace.findFirstOrThrow({
+      select: { name: true, meetingBots: true },
     });
-    if (before.name !== body.name) {
+    if (body.name !== undefined && before.name !== body.name) {
+      await this.auth.api.updateOrganization({
+        body: { organizationId: workspace.id, data: { name: body.name } },
+        headers,
+      });
       await this.audit.record(workspace.id, auth, {
         action: 'workspace.renamed',
         target: { type: 'workspace', id: workspace.id },
         meta: { from: before.name, to: body.name },
       });
     }
+    if (body.meetingBots !== undefined && before.meetingBots !== body.meetingBots) {
+      await db.workspace.update({
+        where: { id: workspace.id },
+        data: { meetingBots: body.meetingBots },
+      });
+      await this.audit.record(workspace.id, auth, {
+        action: 'workspace.bots_changed',
+        target: { type: 'workspace', id: workspace.id },
+        meta: { enabled: body.meetingBots },
+      });
+      if (!body.meetingBots) await this.notetaker.turnedOff(workspace.id);
+    }
     const members = await db.membership.count();
-    return { id: workspace.id, name: body.name, role: workspace.role, active: true, members };
+    return {
+      id: workspace.id,
+      name: body.name ?? before.name,
+      role: workspace.role,
+      active: true,
+      members,
+      meetingBots: body.meetingBots ?? before.meetingBots,
+    };
   }
 }
 

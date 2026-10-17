@@ -15,6 +15,7 @@ import { LiveModule } from './live/live.controller.js';
 import { MailModule } from './mail/mail.module.js';
 import { MeModule } from './me/me.controller.js';
 import { MembersModule } from './members/members.controller.js';
+import { NotetakerModule } from './notetaker/notetaker.controller.js';
 import { OnboardingModule } from './onboarding/onboarding.controller.js';
 import { WorkspacesModule } from './workspaces/workspaces.controller.js';
 
@@ -38,6 +39,7 @@ import { WorkspacesModule } from './workspaces/workspaces.controller.js';
     AskModule,
     AiModule,
     LiveModule,
+    NotetakerModule,
   ],
 })
 export class AppModule {}
