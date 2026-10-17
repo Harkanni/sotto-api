@@ -1,0 +1,466 @@
+# Sotto api: CI/CD on GitHub Actions (ADR 0034 in sotto-platform; it replaced Jenkins).
+#
+# Every pull request and every push to main runs the checks. On main, once every check has
+# passed, the tested images go to ECR and the demo deploys them.
+#
+#   secrets      gitleaks over the files and every commit
+#   code         lint, format, typecheck, unit and integration tests, openapi.json drift
+#   transcriber  ruff and pytest, including the real Whisper test
+#   images       the three images, built for arm64 like the demo, booted against real services
+#   ingestion    a PDF and a 30-minute recording through real transcription, to Ready
+#   evals        the eval set with a real embedding model (Ollama, nomic-embed-text)
+#   deploy       main only: push the images to ECR, deploy the demo through SSM
+#
+# The repo is public, and pull requests (forks included) never see a secret: only `deploy`
+# reads the AWS key, and it runs only on main. Third-party actions are pinned to a commit (the
+# comment says which release); Dependabot proposes updates.
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Actions → CI/CD → Run workflow. On main it deploys too: run it after `terraform apply`
+  # brings the demo back.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per pull request or branch. A newer push to a PR stops the older run (nobody needs
+  # its result); on main, runs queue instead, so a deploy is never cut off halfway.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Where the images find the backing services, inside compose.deps.yaml's network.
+  NET: sotto-deps_default
+  DB: postgresql://sotto:sotto@postgres:5432/sotto
+  MQ: amqp://sotto:sotto@rabbitmq:5672
+
+jobs:
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every commit, not just the last: in a public repo a key that was committed and then
+          # deleted can still be read in the history.
+          fetch-depth: 0
+      # Pinned: with `latest`, a new release could change the rules (or break the scan) without a
+      # commit here. Bump on purpose.
+      - name: gitleaks (the files)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 dir /repo --redact --verbose
+      - name: gitleaks (every commit)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --verbose
+
+  code:
+    name: Lint, typecheck, tests, openapi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Integration tests (apps/api/test/integration) run against a real Postgres with pgvector
+      # and real S3-compatible storage; each test file creates and drops its own database.
+      TEST_DATABASE_URL: postgresql://sotto:sotto@localhost:5432/postgres
+      TEST_S3_ENDPOINT: http://localhost:8333
+      REQUIRE_INTEGRATION: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # pnpm's version comes from package.json (packageManager).
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/deps
+      - name: Install
+        id: install
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        id: build
+        run: pnpm build
+      # Each check runs even when one before it failed, so a single run reports all of them.
+      - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm lint
+      - name: Format
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm format:check
+      - name: Typecheck
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm typecheck
+      - name: Tests (unit and integration)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm test
+      - name: openapi.json is up to date
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          pnpm openapi
+          git diff --exit-code openapi.json || {
+            echo "::error file=openapi.json::openapi.json is stale. Run pnpm build && pnpm openapi and commit it."
+            exit 1
+          }
+
+  transcriber:
+    name: Transcriber (ruff, pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/transcriber
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # ffmpeg normalises audio (the tests encode every browser format); espeak-ng speaks a
+      # sentence so the real Whisper test has words to find at a known time.
+      - name: Install ffmpeg and espeak-ng
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+      # The Whisper test model (tiny, ~75 MB) is downloaded once and kept between runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-tiny-v1
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - name: pytest
+        run: uv run pytest -q --junitxml=pytest.xml
+        env:
+          RUN_WHISPER_TESTS: '1'
+      # Failures as annotations, so they read on the pull request without opening the log.
+      - name: Test failures as annotations
+        if: failure()
+        run: |
+          [ -f pytest.xml ] || exit 0
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for case in ET.parse("pytest.xml").iter("testcase"):
+              for bad in list(case.iter("failure")) + list(case.iter("error")):
+                  text = (bad.get("message") or "") + " | " + (bad.text or "")[-600:]
+                  print(f"::error title={case.get('name')}::{text.replace(chr(10), ' ')}")
+          PY
+
+  # "One command starts everything": the real images on real Postgres, Redis, RabbitMQ and S3
+  # answer /readyz, and their own HEALTHCHECKs agree (Compose --wait and the demo deploy rely
+  # on them).
+  images:
+    name: Images (arm64) and smoke test
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/images
+        with:
+          save-cache: 'true'
+      - uses: ./.github/actions/deps
+      - name: Migrate, start the services, wait until ready and healthy
+        run: |
+          s3=(-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true
+              -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci)
+          docker run --rm --network "$NET" -e DATABASE_URL="$DB" sotto-api:ci sh scripts/migrate.sh
+          # Production mode refuses to start without its own auth secret: a throwaway one.
+          docker run -d --name api --network "$NET" -p 4000:4000 "${s3[@]}" \
+            -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL="$MQ" \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 sotto-api:ci
+          # The worker reads storage only when jobs arrive. AI_EMBEDDINGS=fake: there's no Ollama
+          # in this job (a labelled mock).
+          docker run -d --name worker --network "$NET" -p 4100:4100 -e RABBITMQ_URL="$MQ" \
+            -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
+          # Ready means "connected to the queue"; the labelled mock engine skips the model download.
+          docker run -d --name transcriber --network "$NET" -p 5000:5000 -e RABBITMQ_URL="$MQ" \
+            -e TRANSCRIBER_ENGINE=fake sotto-transcriber:ci
+          for _ in $(seq 1 45); do
+            if curl -fsS localhost:4000/readyz && curl -fsS localhost:4100/readyz && curl -fsS localhost:5000/readyz; then
+              echo
+              for c in api worker transcriber; do
+                for _ in $(seq 1 20); do
+                  [ "$(docker inspect -f '{{.State.Health.Status}}' "$c")" = healthy ] && break
+                  sleep 3
+                done
+                health=$(docker inspect -f '{{.State.Health.Status}}' "$c")
+                echo "$c: $health"
+                [ "$health" = healthy ] || { echo "::error title=smoke::$c is $health, not healthy."; exit 1; }
+              done
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error title=smoke::The api, worker and transcriber never all answered /readyz."
+          exit 1
+      - name: Service logs
+        if: failure()
+        run: |
+          for c in api worker transcriber; do
+            echo "::group::$c"; docker logs --tail 200 "$c" 2>&1 || true; echo "::endgroup::"
+          done
+
+  # Phase 4's "done when": a PDF and a 30-minute recording go in through the api the way a
+  # browser sends them and reach Ready with the right pages and timestamps, transcribed by
+  # faster-whisper (tiny, for speed). scripts/ingestion-check.ts says what is checked.
+  ingestion:
+    name: Ingestion (30-minute recording)
+    needs: images
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: ./.github/actions/images
+      # Mostly silence, with three sentences at known times: 0:03, 20:30 (past the transcriber's
+      # first 20-minute window, so window offsets are tested) and 29:30. Opus in Ogg, the way
+      # Firefox records.
+      - name: Make the 30-minute recording
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+          cd "$RUNNER_TEMP"
+          espeak-ng -s 130 -w s1.wav "Good morning everyone. This is the design review for the Lagos launch."
+          espeak-ng -s 130 -w s2.wav "Next item. The budget for the second quarter is approved."
+          espeak-ng -s 130 -w s3.wav "Last point. We ship the recorder on Friday."
+          ffmpeg -loglevel error -y -f lavfi -t 1800 -i anullsrc=r=16000:cl=mono \
+            -i s1.wav -i s2.wav -i s3.wav -filter_complex \
+            "[1]aresample=16000,adelay=3000[a];[2]aresample=16000,adelay=1230000[b];[3]aresample=16000,adelay=1770000[c];[0][a][b][c]amix=inputs=4:duration=first:normalize=0" \
+            -ac 1 -c:a libopus -b:a 32k meeting.ogg
+          ffprobe -v error -show_entries format=duration -of csv=p=0 meeting.ogg
+      # The transcriber downloads the tiny model (~75 MB) once; it's kept between runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/whisper-models
+          key: whisper-models-tiny-v1
+      - uses: ./.github/actions/deps
+      - name: Migrate and start the api, worker and transcriber
+        run: |
+          s3=(-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true
+              -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci)
+          docker run --rm --network "$NET" -e DATABASE_URL="$DB" sotto-api:ci sh scripts/migrate.sh
+          # Inside the network the services reach storage as s3:8333; the presigned URLs the
+          # "browser" (the check script, on the runner) uses point at localhost:8333.
+          docker run -d --name api --network "$NET" -p 4000:4000 "${s3[@]}" \
+            -e S3_PUBLIC_ENDPOINT=http://localhost:8333 -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 \
+            -e RABBITMQ_URL="$MQ" -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off sotto-api:ci
+          # Embeddings are the labelled hash mock (no Ollama here); they still go through pgvector.
+          docker run -d --name worker --network "$NET" -p 4100:4100 "${s3[@]}" -e RABBITMQ_URL="$MQ" \
+            -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 -e AI_EMBEDDINGS=fake:fake-hash sotto-worker:ci
+          # Transcription is the real engine. The model folder is the runner's, so the cache keeps it.
+          mkdir -p ~/whisper-models && chmod 777 ~/whisper-models
+          docker run -d --name transcriber --network "$NET" -p 5000:5000 "${s3[@]}" -e RABBITMQ_URL="$MQ" \
+            -e TRANSCRIBER_ENGINE=faster-whisper -e WHISPER_MODEL=tiny -v ~/whisper-models:/models \
+            sotto-transcriber:ci
+          for _ in $(seq 1 90); do
+            curl -fsS localhost:4000/readyz >/dev/null && curl -fsS localhost:4100/readyz >/dev/null \
+              && curl -fsS localhost:5000/readyz >/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error title=ingestion::The api, worker and transcriber never all answered /readyz."
+          exit 1
+      - name: Upload a PDF and a 30-minute recording, wait for Ready, check pages and times
+        env:
+          API_URL: http://localhost:4000
+          MAILPIT_URL: http://localhost:8025
+          MEETING_FILE: ${{ runner.temp }}/meeting.ogg
+        run: node scripts/ingestion-check.ts
+      - name: Service logs
+        if: always()
+        run: |
+          for c in api worker transcriber; do
+            echo "::group::$c"; docker logs --tail 200 "$c" 2>&1 || true; echo "::endgroup::"
+          done
+      # The transcriber writes the model as its own user; the cache saves it as the runner's.
+      - name: Make the model cache readable
+        if: always()
+        run: sudo chmod -R a+rX ~/whisper-models || true
+
+  # Phase 5's eval set with a real embedding model, so the semantic half of hybrid search is
+  # measured, not mocked. The sample content is indexed by the worker, then every question in
+  # evals/kestrel.ts is searched and asked by an owner and by a viewer who can't open Board and
+  # finance; evals/score.ts decides, and the run's summary shows the table. No chat model here:
+  # answers are the labelled passages-only kind.
+  evals:
+    name: Evals (real embeddings)
+    needs: images
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The Ollama image and the stores' volumes need room: drop toolchains this job never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+      - uses: ./.github/actions/images
+        with:
+          images: api worker
+      # The images are loaded into Docker now; the builder's own copy of the layers isn't needed.
+      - name: Make room for Ollama
+        run: |
+          docker buildx prune -af > /dev/null
+          df -h / | tail -1
+      - uses: ./.github/actions/deps
+      - name: Start the embedding model (Ollama, nomic-embed-text)
+        run: |
+          # Problems are written as annotations, so they show on the pull request without the log.
+          fail() {
+            echo "::error title=evals setup::$1"
+            docker compose -f compose.deps.yaml logs ollama 2>&1 | tail -15 | sed 's/^/::error title=ollama::/'
+            exit 1
+          }
+          # The ollama service from compose.deps.yaml (profile "ai"), on the same network.
+          docker compose -f compose.deps.yaml --profile ai up -d ollama > "$RUNNER_TEMP/ollama-up.log" 2>&1 \
+            || fail "ollama did not start: $(tail -c 400 "$RUNNER_TEMP/ollama-up.log" | tr '\n\r' '  ')"
+          for _ in $(seq 1 60); do curl -fsS localhost:11434/api/version > /dev/null && break; sleep 1; done
+          curl -fsS localhost:11434/api/version || fail "ollama is not answering on 11434"
+          echo
+          # ~275 MB, pulled over Ollama's HTTP API (the last line of its progress says success).
+          curl -fsS localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' | tail -1 \
+            || fail "could not pull nomic-embed-text"
+          curl -fsS localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"ready"}' \
+            | head -c 80 || fail "nomic-embed-text does not embed"
+          echo
+      - name: Migrate and start the api and worker
+        run: |
+          s3=(-e S3_ENDPOINT=http://s3:8333 -e S3_BUCKET=sotto-files -e S3_FORCE_PATH_STYLE=true
+              -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci)
+          ai=(-e AI_EMBEDDINGS=ollama:nomic-embed-text -e OLLAMA_URL=http://ollama:11434)
+          docker run --rm --network "$NET" -e DATABASE_URL="$DB" sotto-api:ci sh scripts/migrate.sh
+          docker run -d --name api --network "$NET" -p 4000:4000 "${s3[@]}" "${ai[@]}" \
+            -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 -e RABBITMQ_URL="$MQ" \
+            -e AUTH_SECRET="$(openssl rand -hex 32)" -e APP_URL=http://localhost:4000 \
+            -e SMTP_URL=smtp://mailpit:1025 -e AUTH_RATE_LIMIT=off -e ASK_RATE_PER_MINUTE=1000 sotto-api:ci
+          docker run -d --name worker --network "$NET" -p 4100:4100 "${s3[@]}" "${ai[@]}" \
+            -e RABBITMQ_URL="$MQ" -e DATABASE_URL="$DB" -e REDIS_URL=redis://redis:6379 sotto-worker:ci
+          for _ in $(seq 1 90); do
+            curl -fsS localhost:4000/readyz > /dev/null && curl -fsS localhost:4100/readyz > /dev/null && exit 0
+            sleep 2
+          done
+          for c in api worker; do docker logs "$c" 2>&1 | tail -15 | sed "s/^/::error title=$c::/"; done
+          exit 1
+      - name: Run the eval set
+        env:
+          API_URL: http://localhost:4000
+          MAILPIT_URL: http://localhost:8025
+        run: |
+          status=0
+          node scripts/eval.ts || status=$?
+          # The real model's similarities, which the relevance floor is set from (a notice).
+          OLLAMA_URL=http://localhost:11434 node scripts/eval-similarity.ts || true
+          [ "$status" = 0 ] && exit 0
+          # On failure, the services' last lines become annotations (the pull request shows them).
+          df -h / | tail -1 | sed 's/^/::error title=disk::/'
+          for c in api worker; do
+            docker logs "$c" 2>&1 | grep -i -E 'error|warn' | tail -8 | sed "s/^/::error title=$c::/" || true
+          done
+          docker compose -f compose.deps.yaml logs s3 2>&1 | tail -8 | sed 's/^/::error title=s3::/'
+          exit 1
+      - name: Service logs
+        if: always()
+        run: |
+          for c in api worker; do
+            echo "::group::$c"; docker logs --tail 200 "$c" 2>&1 || true; echo "::endgroup::"
+          done
+
+  # main only, after every check: the images go to ECR (sha-<7> and main tags) and the demo
+  # server pulls and restarts them through the sotto-deploy SSM document.
+  deploy:
+    name: Push images and deploy the demo
+    needs: [secrets, code, transcriber, images, ingestion, evals]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    # Lists each deploy on the repo's page (Deployments), and is where protection rules go if
+    # they're ever wanted: Settings → Environments → demo.
+    environment: demo
+    concurrency:
+      group: deploy-demo-api
+      cancel-in-progress: false
+    env:
+      # One IAM access key, kept as repository secrets (ADR 0007). In sotto-platform,
+      # `terraform output -raw github_secrets` prints the commands that set them all.
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'eu-west-2' }}
+      # Optional: worked out from the account when it isn't set.
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY || vars.ECR_REGISTRY }}
+    steps:
+      # `terraform destroy` removes everything, the image repositories included. While the demo
+      # is down, main skips the push and the deploy (they don't fail); after `terraform apply`,
+      # run this workflow on main. Any other AWS error fails the job rather than quietly
+      # skipping the deploy.
+      - name: Is the demo up?
+        id: demo
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error title=AWS key::Add the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY repository secrets (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          # 0: up. 3: down (no image repository, or no running demo server). Anything else: an error.
+          check() {
+            out=$(aws ecr describe-repositories --repository-names sotto/api 2>&1) || {
+              echo "$out" | grep -q RepositoryNotFoundException && return 3
+              echo "$out"; return 1
+            }
+            n=$(aws ec2 describe-instances --filters Name=tag:sotto-role,Values=demo \
+              Name=instance-state-name,Values=running --query 'length(Reservations)' --output text) || return 1
+            [ "$n" != 0 ] || return 3
+          }
+          rc=0
+          check || rc=$?
+          case "$rc" in
+            0) echo "up=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "up=false" >> "$GITHUB_OUTPUT"
+               echo "::notice title=The demo is down::No sotto/api image repository or no running demo server, so nothing was pushed or deployed. After terraform apply, run this workflow on main." ;;
+            *) echo "::error title=AWS::Couldn't check the demo with AWS (exit $rc); see above."; exit 1 ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.demo.outputs.up == 'true'
+      - uses: ./.github/actions/images
+        if: steps.demo.outputs.up == 'true'
+      - name: Push the images to ECR
+        if: steps.demo.outputs.up == 'true'
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          ECR_REGISTRY="${ECR_REGISTRY:-$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com}"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          for svc in api worker transcriber; do
+            arch=$(docker image inspect -f '{{.Architecture}}' "sotto-$svc:ci")
+            [ "$arch" = arm64 ] || { echo "::error title=$svc::sotto-$svc:ci is $arch; the demo needs arm64."; exit 1; }
+          done
+          for svc in api worker transcriber; do
+            for t in "$TAG" main; do
+              docker tag "sotto-$svc:ci" "$ECR_REGISTRY/sotto/$svc:$t"
+              docker push --quiet "$ECR_REGISTRY/sotto/$svc:$t"
+            done
+          done
+      - name: Deploy to the demo through SSM
+        if: steps.demo.outputs.up == 'true'
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          ID=$(aws ssm send-command --document-name sotto-deploy \
+            --targets "Key=tag:sotto-role,Values=demo" \
+            --parameters "services=api worker transcriber,tag=$TAG" \
+            --comment "sotto-api $TAG" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $ID"
+          for _ in $(seq 1 60); do
+            STATUS=$(aws ssm list-commands --command-id "$ID" --query 'Commands[0].Status' --output text)
+            echo "status: $STATUS"
+            case "$STATUS" in
+              Success)
+                echo "Deployed \`$TAG\` (api, worker, transcriber) to the demo." >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm list-command-invocations --command-id "$ID" --details \
+                  --query 'CommandInvocations[0].CommandPlugins[0].Output' --output text || true
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error title=deploy::The deploy didn't finish within 10 minutes (SSM command $ID)."
+          exit 1

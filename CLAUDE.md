@@ -9,9 +9,10 @@ Private AI for a team's memos and meetings: internal teams upload documents and 
 questions, get answers with sources, and control exactly where their data goes. The owner is
 Akanni Emmanuel (GitHub `Harkanni`); he reviews and merges every pull request.
 
-Three private repos, cloned side by side: `sotto-web` (Next.js app, design system), `sotto-api`
-(here) and `sotto-platform` (docs hub, Compose, Terraform, demo deploys). A missing sibling:
-`git clone https://github.com/Harkanni/<repo>.git ../<repo>`.
+Three repos, cloned side by side: `sotto-web` (Next.js app, design system), `sotto-api` (here)
+and `sotto-platform` (docs hub, Compose, Terraform, demo deploys). A missing sibling:
+`git clone https://github.com/Harkanni/<repo>.git ../<repo>`. This repo is public: every commit,
+not just the latest files, can be read by anyone.
 
 ## Start of every session: recover, then continue
 
@@ -77,26 +78,29 @@ Three private repos, cloned side by side: `sotto-web` (Next.js app, design syste
 
 `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm
 openapi` when routes change. Integration tests (`apps/api/test/integration`) need a real
-Postgres: set `TEST_DATABASE_URL` (Jenkins starts `compose.deps.yaml`; locally `pnpm deps:up`).
+Postgres: set `TEST_DATABASE_URL` (CI starts `compose.deps.yaml`; locally `pnpm deps:up`).
 New endpoints get integration tests covering each role, including the ones that must be refused.
 Never claim a check ran unless it did; record runs in the phase log.
 
-CI is Jenkins (the `Jenkinsfile`; GitHub Actions is no longer used): secrets scan, lint,
-typecheck, unit and integration tests, `openapi.json` drift, the transcriber's pytest, an image
-smoke test, the 30-minute ingestion check and the eval set; on `main`, image push and the demo
-deploy. Agent sandbox: run pnpm with `npm_config_manage_package_manager_versions=false`; install
+CI/CD is GitHub Actions, `.github/workflows/pipeline.yml` (ADR 0034; Jenkins is gone): secrets
+scan (the files and every commit), lint, typecheck, unit and integration tests, `openapi.json`
+drift, the transcriber's pytest, an arm64 image smoke test, the 30-minute ingestion check and the
+eval set; on `main`, after all of them pass, the image push and the demo deploy.
+
+Agent sandbox: run pnpm with `npm_config_manage_package_manager_versions=false`; install
 dependencies with `pnpm install` and commit `pnpm-lock.yaml` with the change (`scripts/agent-deps.sh`
 restores an old `dev-cache` snapshot when the registry is unreachable).
 
 ## Git and checkpoints
 
-- `main` changes only through PRs with a green Jenkins build; the owner merges. Never merge your own PR,
+- `main` changes only through PRs with green CI; the owner merges. Never merge your own PR,
   force-push or rewrite history. Branches `feat/p<phase>-<slice>`, `fix/…`, `chore/…`;
   Conventional Commits.
 - Work in progress lives on a pushed branch with a draft PR whose description is a checklist.
   Checkpoint after every logically complete task: checks, phase log, commit, push.
 - Before each commit, read the diff for accidental changes and secrets. Only `.env.example` is
-  committed. Jenkins reaches AWS with an IAM access key in the jenkins user's AWS CLI profile; don't
-  reintroduce OIDC.
+  committed. The deploy job reaches AWS with an IAM access key kept as GitHub Actions secrets
+  (ADR 0007); don't reintroduce OIDC. Pull requests never get secrets: keep it that way (no
+  `pull_request_target`, no secrets in PR jobs).
 - API + web changes are paired PRs; this one merges first. Every PR has a companion
   `../sotto-platform/docs/STATUS.md` update.
