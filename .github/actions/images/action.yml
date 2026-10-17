@@ -1,0 +1,73 @@
+# Builds sotto-api's images for the runner's architecture and loads them into Docker as
+# sotto-api:ci, sotto-worker:ci and sotto-transcriber:ci. The image jobs run on GitHub's arm64
+# runners, so these are arm64 images, like the demo server (Graviton).
+#
+# Builds go through the GitHub Actions layer cache. The `images` job builds first and writes the
+# cache (save-cache: 'true'); ingestion, evals and deploy read it, so they rebuild from those
+# cached layers in a minute or two instead of from scratch, and what the deploy pushes is made of
+# the same layers the checks ran. Each image has its own cache scope: one shared scope would keep
+# only the last image's layers.
+name: Build the images
+description: Builds api, worker and transcriber from the layer cache and loads them into Docker.
+
+inputs:
+  images:
+    description: Which images to build, space-separated.
+    default: api worker transcriber
+  save-cache:
+    description: "'true' writes the layers back to the cache (the first job that builds them)."
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # The release's version, baked into each image (the api reports it): sha-<7 characters>.
+    - name: Version
+      id: version
+      shell: bash
+      run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+    # BuildKit in a container: the builder that can read and write the layer cache.
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+    - name: Build sotto-api:ci
+      if: contains(format(' {0} ', inputs.images), ' api ')
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        build-args: |
+          APP=api
+          APP_VERSION=${{ steps.version.outputs.tag }}
+          GIT_SHA=${{ github.sha }}
+        tags: sotto-api:ci
+        load: true
+        cache-from: type=gha,scope=api-${{ runner.arch }}
+        cache-to: ${{ inputs.save-cache == 'true' && format('type=gha,mode=max,scope=api-{0}', runner.arch) || '' }}
+
+    # Same Dockerfile as the api: its build stage comes straight from the builder's cache.
+    - name: Build sotto-worker:ci
+      if: contains(format(' {0} ', inputs.images), ' worker ')
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        build-args: |
+          APP=worker
+          APP_VERSION=${{ steps.version.outputs.tag }}
+          GIT_SHA=${{ github.sha }}
+        tags: sotto-worker:ci
+        load: true
+        cache-from: type=gha,scope=worker-${{ runner.arch }}
+        cache-to: ${{ inputs.save-cache == 'true' && format('type=gha,mode=max,scope=worker-{0}', runner.arch) || '' }}
+
+    - name: Build sotto-transcriber:ci
+      if: contains(format(' {0} ', inputs.images), ' transcriber ')
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: services/transcriber
+        build-args: |
+          APP_VERSION=${{ steps.version.outputs.tag }}
+          GIT_SHA=${{ github.sha }}
+        tags: sotto-transcriber:ci
+        load: true
+        cache-from: type=gha,scope=transcriber-${{ runner.arch }}
+        cache-to: ${{ inputs.save-cache == 'true' && format('type=gha,mode=max,scope=transcriber-{0}', runner.arch) || '' }}

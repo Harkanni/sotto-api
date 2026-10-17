@@ -1,0 +1,32 @@
+# The backing services from compose.deps.yaml, the same ones `pnpm deps:up` starts locally:
+# Postgres (pgvector), Redis, RabbitMQ, S3-compatible storage (SeaweedFS) and Mailpit, each one
+# waited for, plus the two buckets: sotto-files (the api's) and sotto-test (the tests').
+#
+# They run on Compose's `sotto-deps_default` network, so the images reach them by name
+# (postgres:5432, s3:8333 …), and on the usual host ports, so the tests reach them on localhost.
+name: Start the backing services
+description: Postgres, Redis, RabbitMQ, S3 and Mailpit from compose.deps.yaml, plus the buckets.
+
+runs:
+  using: composite
+  steps:
+    - name: Start Postgres, Redis, RabbitMQ, S3 and Mailpit
+      shell: bash
+      run: |
+        docker compose -f compose.deps.yaml up -d --wait postgres redis rabbitmq s3 mailpit
+
+        # SeaweedFS answers on its S3 port before its filer is ready, so retry each bucket until
+        # it exists (409: it already did). `|| true`: a refused connection makes curl exit 7,
+        # which would end the script instead of retrying; the code is then 000.
+        for bucket in sotto-files sotto-test; do
+          for _ in $(seq 1 60); do
+            code=$(curl -s -X PUT -o /dev/null -w '%{http_code}' "http://localhost:8333/$bucket" || true)
+            case "$code" in 200|409) break ;; esac
+            sleep 1
+          done
+          echo "bucket $bucket: HTTP $code"
+          case "$code" in
+            200|409) ;;
+            *) echo "::error title=S3::Couldn't create the $bucket bucket."; exit 1 ;;
+          esac
+        done

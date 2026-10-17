@@ -1,0 +1,14 @@
+# The workflows pin every action to a commit (a tag can be moved to other code; a commit can't).
+# Dependabot keeps those pins current: once a week it opens one pull request with any new
+# releases, and CI runs on it like on any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ['/', '/.github/actions/*']
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci

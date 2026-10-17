@@ -2,8 +2,8 @@
 #   pnpm deps:up        → start them
 #   pnpm deps:down      → stop them (data is kept in named volumes)
 # The full stack (web + api + worker + transcriber) lives in sotto-platform/local/compose.yaml.
-# Host ports default to the usual ones; Jenkins shifts them per build slot (PG_PORT, …) so
-# several builds can run on one host at once.
+# Host ports default to the usual ones; PG_PORT, REDIS_PORT, … move them, so two stacks can share
+# one machine. CI (.github/workflows/pipeline.yml) starts these same services.
 name: sotto-deps
 
 services:
