@@ -12,6 +12,7 @@ import {
   SampleCalendar,
   meetingLink,
 } from '../src/notetaker/calendars.js';
+import { eventKey, parseEventKey, unavailableFor } from '../src/notetaker/calendar.service.js';
 
 const SECRET = 'a-test-secret-that-is-long-enough-1234';
 const NOW = Date.parse('2026-10-17T09:00:00Z');
@@ -317,5 +318,32 @@ describe('SampleCalendar', () => {
     expect(first.filter((e) => e.title === 'Quick sync')).toHaveLength(3);
     const starts = first.map((e) => e.startsAt.getTime());
     expect(starts).toEqual([...starts].sort((a, b) => a - b));
+  });
+});
+
+describe('event keys and why the notetaker can’t go', () => {
+  it('round-trips a calendar and its event id, whatever the id holds', () => {
+    const id = 'AAMkAGI2TG93AAA=:with/odd_chars';
+    expect(parseEventKey(eventKey('cc_123', id))).toEqual({ connectionId: 'cc_123', eventId: id });
+    expect(parseEventKey('not-a-key')).toBeNull();
+    expect(parseEventKey(Buffer.from(':x').toString('base64url'))).toBeNull();
+  });
+
+  it('says the most useful reason first', () => {
+    const now = new Date('2026-10-17T09:00:00Z');
+    const call = {
+      endsAt: new Date('2026-10-17T10:00:00Z'),
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      platform: 'MEET' as const,
+    };
+    const ready = { now, botsOn: true, botReady: true, supported: true };
+    expect(unavailableFor(call, ready)).toBeNull();
+    expect(unavailableFor({ ...call, endsAt: now }, { ...ready, botsOn: false })).toBe('ended');
+    expect(
+      unavailableFor({ ...call, meetingUrl: null, platform: null }, { ...ready, botsOn: false }),
+    ).toBe('no_link');
+    expect(unavailableFor(call, { ...ready, botsOn: false, botReady: false })).toBe('bots_off');
+    expect(unavailableFor(call, { ...ready, botReady: false, supported: false })).toBe('no_bot');
+    expect(unavailableFor(call, { ...ready, supported: false })).toBe('platform');
   });
 });

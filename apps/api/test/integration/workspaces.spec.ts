@@ -53,7 +53,14 @@ describe.skipIf(withDatabase)('workspaces, members and invites', () => {
     });
     const list = await ada.get('/api/v1/workspaces').expect(200);
     expect(list.body).toEqual([
-      { id: workspaceId, name: 'Kestrel Labs', role: 'owner', active: true, members: 1 },
+      {
+        id: workspaceId,
+        name: 'Kestrel Labs',
+        role: 'owner',
+        active: true,
+        members: 1,
+        meetingBots: true,
+      },
     ]);
     expect(await actions()).toEqual(['workspace.created']);
   });
