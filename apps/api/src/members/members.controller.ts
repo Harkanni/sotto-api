@@ -383,7 +383,12 @@ export class MembersController {
       this.prisma.client,
       workspaceId,
     ).workspace.findFirstOrThrow({
-      select: { id: true, name: true, _count: { select: { memberships: true } } },
+      select: {
+        id: true,
+        name: true,
+        meetingBots: true,
+        _count: { select: { memberships: true } },
+      },
     });
     return {
       id: workspace.id,
@@ -391,6 +396,7 @@ export class MembersController {
       role,
       active: true,
       members: workspace._count.memberships,
+      meetingBots: workspace.meetingBots,
     };
   }
 }

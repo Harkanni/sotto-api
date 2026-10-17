@@ -18,6 +18,10 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
       return `Created the workspace ${quote(text('name'))}`;
     case 'workspace.renamed':
       return `Renamed the workspace from ${quote(text('from'))} to ${quote(text('to'))}`;
+    case 'workspace.bots_changed':
+      return m.enabled
+        ? 'Turned the notetaker on for the workspace'
+        : 'Turned the notetaker off for the workspace';
     case 'member.joined':
       return `Joined as ${article(text('role'))}`;
     case 'member.role_changed':
@@ -88,6 +92,18 @@ export function describeEntry(action: string, meta: Prisma.JsonValue | null): st
       return `Cancelled the ${text('plan')} plan`;
     case 'ask.asked':
       return 'Asked Sotto a question';
+    case 'calendar.connected':
+      return `Connected ${text('label') || 'a calendar'}${text('email') ? ` (${text('email')})` : ''}`;
+    case 'calendar.disconnected':
+      return `Disconnected ${text('label') || 'a calendar'}`;
+    case 'calendar.auto_join_changed':
+      return m.autoJoin
+        ? `Sent the notetaker to every call on ${text('label') || 'a calendar'}`
+        : `Stopped sending the notetaker to every call on ${text('label') || 'a calendar'}`;
+    case 'bot.sent':
+      return `Sent the notetaker to ${quote(text('name'))}`;
+    case 'bot.skipped':
+      return `Kept the notetaker out of ${quote(text('name'))}`;
     default:
       return action;
   }

@@ -99,12 +99,32 @@ export interface DiarizationProvider extends ProviderInfo {
 // ── Meeting bot (Phase 7) ─────────────────────────────────────────────
 export type MeetingPlatform = 'MEET' | 'ZOOM' | 'TEAMS';
 
+/**
+ * One call to join (ADR 0035). The bot reports what happens on the signed webhook and, once
+ * it's let in, sends the call's audio to the live session the webhook's answer names, the same
+ * chunk API as Listen mode, with `Authorization: Bot <token>`.
+ */
+export interface BotJob {
+  /** The assignment this run is for; every report names it. */
+  assignmentId: string;
+  meetingUrl: string;
+  platform: MeetingPlatform;
+  /** Shown to everyone in the call ("Sotto Notetaker"). */
+  botName: string;
+  /** Posted in the meeting chat when the bot is let in, so everyone knows it's recording. */
+  announcement: string;
+  /** Where to report (`POST`, signed) and send audio, and the token that lets it. */
+  callback: { webhookUrl: string; audioBaseUrl: string; token: string };
+  /** Leave by then even if the call carries on. */
+  leaveBy: Date;
+}
+
 export interface MeetingBotProvider extends ProviderInfo {
   readonly capability: 'meetingBot';
   readonly platforms: readonly MeetingPlatform[];
-  join(input: { meetingUrl: string; platform: MeetingPlatform; botName: string }): Promise<{
-    ref: string;
-  }>;
+  /** Starts a run; resolves with the provider's reference for it once it's on its way. */
+  join(job: BotJob): Promise<{ ref: string }>;
+  /** Asks a run to leave the call (or never join). Safe to call more than once. */
   leave(ref: string): Promise<void>;
 }
 

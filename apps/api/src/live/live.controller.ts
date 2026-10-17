@@ -16,7 +16,7 @@ import {
 import { ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Observable } from 'rxjs';
 import { z } from 'zod';
-import { RequireRole } from '../auth/auth.guard.js';
+import { AllowBot, RequireRole } from '../auth/auth.guard.js';
 import { AiModule } from '../ai/ai.controller.js';
 import { CollectionsModule } from '../collections/collections.controller.js';
 import { ApiErrors, ApiException } from '../common/errors.js';
@@ -112,6 +112,8 @@ export class LiveController {
 
   @Post(':id/audio')
   @RequireRole('member')
+  // The notetaker sends its call's audio here too, with its own token (ADR 0035).
+  @AllowBot()
   @HttpCode(200)
   @ApiOperation({
     summary:

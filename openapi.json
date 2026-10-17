@@ -514,7 +514,7 @@
             }
           }
         },
-        "summary": "Rename the active workspace (admins and owners).",
+        "summary": "Rename the active workspace, or turn the notetaker on or off for everyone in it (admins and owners). Off: calls not started yet are skipped, and bots in calls leave (what they recorded is saved).",
         "tags": [
           "workspaces"
         ]
@@ -3740,6 +3740,276 @@
           "live"
         ]
       }
+    },
+    "/api/v1/calendar": {
+      "get": {
+        "operationId": "NotetakerController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Your connected calendars, the calendars this server offers, and the notetaker: whether the admins allow it and whether this server can send one.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/connect/{provider}": {
+      "post": {
+        "operationId": "NotetakerController_connect",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CalendarProviderId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarConnectResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Connect a calendar. Google and Microsoft answer with the page where you grant read-only access (open it in the browser); the sample calendar connects at once.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/callback/{provider}": {
+      "get": {
+        "operationId": "NotetakerController_callback",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/CalendarProviderId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Where Google or Microsoft send the browser back after the consent page. Redirects to the calendar screen with `connected=<provider>` or `calendar_error=<code>`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/connections/{id}": {
+      "delete": {
+        "operationId": "NotetakerController_disconnect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Disconnect a calendar: Sotto forgets its access (and tells Google), and any notetaker on its way or in a call for it leaves. Meetings already recorded stay.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/events": {
+      "get": {
+        "operationId": "NotetakerController_events",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEventList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Your upcoming calls (and ones under way) from every connected calendar, soonest first, each with whether the notetaker can go and what it is doing.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/events/{id}/bot": {
+      "put": {
+        "operationId": "NotetakerController_send",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendBot"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEvent"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send the notetaker to one call, or keep it out (taking it back if it is on its way or in the call: what it recorded so far is saved).",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/v1/calendar/settings": {
+      "patch": {
+        "operationId": "NotetakerController_settings",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Auto-join: send the notetaker to every call with a link on one calendar, or on all of yours. Calls you skip one by one stay skipped.",
+        "tags": [
+          "calendar"
+        ]
+      }
     }
   },
   "info": {
@@ -4281,6 +4551,9 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "meetingBots": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4288,7 +4561,8 @@
           "name",
           "role",
           "active",
-          "members"
+          "members",
+          "meetingBots"
         ],
         "additionalProperties": false
       },
@@ -4312,11 +4586,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 60
+          },
+          "meetingBots": {
+            "type": "boolean"
           }
-        },
-        "required": [
-          "name"
-        ]
+        }
       },
       "MemberList": {
         "type": "object",
@@ -4746,6 +5020,7 @@
             "enum": [
               "workspace.created",
               "workspace.renamed",
+              "workspace.bots_changed",
               "member.joined",
               "member.role_changed",
               "member.removed",
@@ -4778,7 +5053,12 @@
               "ai.key_removed",
               "billing.plan_changed",
               "billing.payment_failed",
-              "billing.cancelled"
+              "billing.cancelled",
+              "calendar.connected",
+              "calendar.disconnected",
+              "calendar.auto_join_changed",
+              "bot.sent",
+              "bot.skipped"
             ]
           },
           "summary": {
@@ -7157,6 +7437,374 @@
           "session"
         ],
         "additionalProperties": false
+      },
+      "CalendarStatus": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarProviderInfo"
+            }
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarConnection"
+            }
+          },
+          "notetaker": {
+            "$ref": "#/components/schemas/NotetakerInfo"
+          },
+          "canManageNotetaker": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "providers",
+          "connections",
+          "notetaker",
+          "canManageNotetaker"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarProviderInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/CalendarProviderId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "isMock": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "available",
+          "isMock"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarProviderId": {
+        "type": "string",
+        "enum": [
+          "google",
+          "microsoft",
+          "sample"
+        ]
+      },
+      "CalendarConnection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/CalendarProviderId"
+          },
+          "label": {
+            "type": "string"
+          },
+          "accountEmail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "autoJoin": {
+            "type": "boolean"
+          },
+          "syncedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "isMock": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "label",
+          "accountEmail",
+          "autoJoin",
+          "syncedAt",
+          "error",
+          "isMock"
+        ],
+        "additionalProperties": false
+      },
+      "NotetakerInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "isMock": {
+            "type": "boolean"
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetPlatform"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "enabled",
+          "available",
+          "label",
+          "isMock",
+          "platforms"
+        ],
+        "additionalProperties": false
+      },
+      "MeetPlatform": {
+        "type": "string",
+        "enum": [
+          "meet",
+          "zoom",
+          "teams"
+        ]
+      },
+      "CalendarConnectResult": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "nullable": true,
+            "type": "string"
+          },
+          "connection": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CalendarConnection"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "connection"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarCallbackQuery": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "error": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      },
+      "CalendarEventsQuery": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "default": 7,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 14
+          }
+        }
+      },
+      "CalendarEventList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEvent"
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "connectionId": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "connectionId",
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/CalendarProviderId"
+          },
+          "title": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "meetingUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "platform": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeetPlatform"
+              }
+            ]
+          },
+          "unavailable": {
+            "nullable": true,
+            "type": "string",
+            "enum": [
+              "no_link",
+              "platform",
+              "bots_off",
+              "no_bot",
+              "ended"
+            ]
+          },
+          "bot": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BotState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "connectionId",
+          "provider",
+          "title",
+          "startsAt",
+          "endsAt",
+          "meetingUrl",
+          "platform",
+          "unavailable",
+          "bot"
+        ],
+        "additionalProperties": false
+      },
+      "BotState": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/BotStatus"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "joinAt": {
+            "type": "string"
+          },
+          "liveSessionId": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "error",
+          "joinAt",
+          "liveSessionId"
+        ],
+        "additionalProperties": false
+      },
+      "BotStatus": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "joining",
+          "in_call",
+          "done",
+          "skipped",
+          "failed"
+        ]
+      },
+      "SendBot": {
+        "type": "object",
+        "properties": {
+          "send": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "send"
+        ]
+      },
+      "CalendarSettings": {
+        "type": "object",
+        "properties": {
+          "autoJoin": {
+            "type": "boolean"
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "autoJoin"
+        ]
       }
     }
   }
