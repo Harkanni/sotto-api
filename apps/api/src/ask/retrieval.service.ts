@@ -52,6 +52,8 @@ export interface Passage {
   vectorRank: number | null;
   /** Cosine similarity to the question, when semantic search ran. */
   similarity: number | null;
+  /** From a call's live transcript (not indexed yet): cited by time, with no chunk. */
+  live?: true;
 }
 
 export interface Retrieval {

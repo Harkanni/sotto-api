@@ -25,6 +25,13 @@ describe('keys', () => {
     expect(keys.derived('w1', 'f1', Derived.transcript)).toBe('files/w1/f1/transcript.json');
   });
 
+  it('numbers live chunks under the file, in listing order', () => {
+    expect(keys.liveChunk('w1', 'f1', 0)).toBe('files/w1/f1/live/000000.pcm');
+    expect(keys.liveChunk('w1', 'f1', 1234)).toBe('files/w1/f1/live/001234.pcm');
+    expect(() => keys.liveChunk('w1', 'f1', -1)).toThrow(/whole number/);
+    expect(() => keys.liveChunk('w1', 'f1', 1.5)).toThrow(/whole number/);
+  });
+
   it('refuses ids that could escape the prefix', () => {
     expect(() => keys.file('../w2', 'f1')).toThrow(/workspace id/);
     expect(() => keys.file('w1', 'f1/../../x')).toThrow(/file id/);
@@ -169,5 +176,54 @@ describe.skipIf(!endpoint)('Storage against S3', () => {
   it('never deletes more than one file’s prefix', async () => {
     await expect(storage.deletePrefix('files/')).rejects.toThrow(/wider than one file/);
     await expect(storage.deletePrefix('files/wtest/')).rejects.toThrow(/wider than one file/);
+  });
+});
+
+/** Needs an S3-compatible server (CI's, or moto locally): TEST_S3_ENDPOINT. */
+describe.skipIf(!process.env.TEST_S3_ENDPOINT)('putFromPieces', () => {
+  const storage = new Storage(
+    storageEnv.parse({
+      S3_ENDPOINT: process.env.TEST_S3_ENDPOINT,
+      S3_BUCKET: process.env.TEST_S3_BUCKET ?? 'sotto-test',
+      S3_ACCESS_KEY_ID: 'test',
+      S3_SECRET_ACCESS_KEY: 'test',
+      S3_FORCE_PATH_STYLE: 'true',
+    }),
+  );
+  async function* pieces(sizes: number[]) {
+    let n = 0;
+    for (const size of sizes) {
+      yield Buffer.alloc(size, n++ % 251);
+    }
+  }
+  const expected = (sizes: number[]) =>
+    Buffer.concat(sizes.map((size, n) => Buffer.alloc(size, n % 251)));
+
+  it('writes a small result as one object', async () => {
+    const key = `files/wp/f${Date.now()}/original.wav`;
+    expect(await storage.putFromPieces(key, pieces([10, 20, 30]), 'audio/wav')).toBe(60);
+    expect((await storage.getBytes(key)).equals(expected([10, 20, 30]))).toBe(true);
+  });
+
+  it('streams a large result as parts, in order', async () => {
+    const key = `files/wp/g${Date.now()}/original.wav`;
+    const sizes = [3 * MiB, 4 * MiB, 1, 5 * MiB + 7, 2 * MiB];
+    const total = sizes.reduce((a, b) => a + b, 0);
+    expect(await storage.putFromPieces(key, pieces(sizes), 'audio/wav', 5 * MiB)).toBe(total);
+    const back = await storage.getBytes(key);
+    expect(back.length).toBe(total);
+    expect(back.equals(expected(sizes))).toBe(true);
+  });
+
+  it('leaves nothing behind when a piece fails', async () => {
+    const key = `files/wp/h${Date.now()}/original.wav`;
+    async function* failing() {
+      yield Buffer.alloc(6 * MiB);
+      throw new Error('chunk missing');
+    }
+    await expect(storage.putFromPieces(key, failing(), 'audio/wav', 5 * MiB)).rejects.toThrow(
+      'chunk missing',
+    );
+    await expect(storage.head(key)).rejects.toBeInstanceOf(ObjectMissingError);
   });
 });

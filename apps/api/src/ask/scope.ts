@@ -13,6 +13,11 @@ export const AskScope = z
     fileIds: z.array(z.string().min(1).max(64)).max(20).optional(),
     /** Documents (and notes), meetings, or both (absent). */
     kind: z.enum(['documents', 'meetings']).optional(),
+    /**
+     * A call being captured live: its transcript so far is offered too, beside the rest of the
+     * scope (it isn't indexed until the call ends). Only someone who can open it may use it.
+     */
+    liveSessionId: z.string().min(1).max(64).optional(),
   })
   .meta({ id: 'AskScope' });
 export type AskScope = z.infer<typeof AskScope>;

@@ -63,6 +63,11 @@ export const apiEnv = baseEnv
     BILLING_ALLOW_LIVE: z
       .preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean())
       .default(false),
+    /**
+     * The transcriber's HTTP address. Live captures (Listen mode, the notetaker bot) send it a
+     * few seconds of audio at a time; recorded files still go through the queue.
+     */
+    TRANSCRIBER_URL: z.url().default('http://localhost:5000'),
     /** The largest file anyone may upload. Recordings run long; 2 GiB covers hours of audio. */
     UPLOAD_MAX_BYTES: z.coerce
       .number()

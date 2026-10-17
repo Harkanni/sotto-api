@@ -127,6 +127,19 @@ export class ConversationsController {
   private async checkScope(viewer: Viewer, scope: AskScope): Promise<void> {
     if (scope.collectionId) await this.collections.open(viewer, scope.collectionId);
     for (const id of scope.fileIds ?? []) await this.files.open(viewer, id);
+    if (scope.liveSessionId) {
+      const session = await this.ask
+        .db(viewer.workspaceId)
+        .liveSession.findFirst({ where: { id: scope.liveSessionId }, select: { fileId: true } });
+      if (!session) {
+        throw new ApiException(
+          404,
+          'NOT_FOUND',
+          'This live meeting doesn’t exist, or you can’t open it.',
+        );
+      }
+      await this.files.open(viewer, session.fileId);
+    }
   }
 
   @Post('conversations')

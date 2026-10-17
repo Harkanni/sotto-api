@@ -84,8 +84,16 @@ def engines() -> dict[str, object]:
 async def transcribe(
     audio: UploadFile = File(...),  # noqa: B008 — FastAPI's documented pattern
     language: str | None = Form(default=None),  # noqa: B008
+    in_cluster_only: bool = Form(default=False),  # noqa: B008
 ) -> TranscriptionResult:
-    """Direct transcription for small files and tests. Production audio goes through the queue."""
+    """Direct transcription: live chunks (Listen mode, the notetaker bot), small files and tests.
+    Recorded files go through the queue.
+
+    `in_cluster_only` marks Restricted audio: it's refused (409) if this engine sends audio
+    outside the cluster, whatever the caller believed about the engine a moment ago.
+    """
+    if in_cluster_only and engine.data_location != "IN_CLUSTER":
+        raise HTTPException(status_code=409, detail="engine sends audio outside the cluster")
     suffix = Path(audio.filename or "audio").suffix[:10]
     with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
         size = 0

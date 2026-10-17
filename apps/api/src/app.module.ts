@@ -11,6 +11,7 @@ import { EventsModule } from './events/events.controller.js';
 import { FilesModule } from './files/files.controller.js';
 import { HealthModule } from './health/health.module.js';
 import { InfraModule } from './infra.module.js';
+import { LiveModule } from './live/live.controller.js';
 import { MailModule } from './mail/mail.module.js';
 import { MeModule } from './me/me.controller.js';
 import { MembersModule } from './members/members.controller.js';
@@ -36,6 +37,7 @@ import { WorkspacesModule } from './workspaces/workspaces.controller.js';
     EventsModule,
     AskModule,
     AiModule,
+    LiveModule,
   ],
 })
 export class AppModule {}

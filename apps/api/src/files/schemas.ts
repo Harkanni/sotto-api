@@ -9,7 +9,7 @@ export const SensitivitySchema = z
   .enum(['internal', 'confidential', 'restricted'])
   .meta({ id: 'Sensitivity' });
 export const FileSourceSchema = z
-  .enum(['upload', 'recording', 'sample', 'import', 'written'])
+  .enum(['upload', 'recording', 'sample', 'import', 'written', 'live', 'bot'])
   .meta({ id: 'FileSource' });
 
 export const FileSchema = z

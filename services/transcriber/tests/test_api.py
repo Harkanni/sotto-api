@@ -31,6 +31,21 @@ def test_transcribe_returns_labelled_mock_segments():
     assert body["segments"][-1]["endMs"] == body["durationMs"]
 
 
+def test_in_cluster_only_is_refused_by_an_engine_outside(monkeypatch):
+    from app import main
+
+    audio = {"audio": ("chunk.wav", b"RIFF0000WAVEfake", "audio/wav")}
+    assert (
+        client.post("/v1/transcribe", files=audio, data={"in_cluster_only": "true"}).status_code
+        == 200
+    )
+    monkeypatch.setattr(main.engine, "data_location", "THIRD_PARTY")
+    refused = client.post("/v1/transcribe", files=audio, data={"in_cluster_only": "true"})
+    assert refused.status_code == 409
+    # Audio that isn't Restricted may still use it.
+    assert client.post("/v1/transcribe", files=audio).status_code == 200
+
+
 def test_unknown_engine_fails_clearly():
     try:
         create_engine("whisper-9000")

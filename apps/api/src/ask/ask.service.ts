@@ -33,6 +33,7 @@ import {
 } from './answer.js';
 import { type Passage, RetrievalService } from './retrieval.service.js';
 import type { AnswerEvent, CitationOut, MessageOut } from './schemas.js';
+import { relevantStretches } from '../live/passages.js';
 import { type AskScope, storedScope } from './scope.js';
 
 /** How often a streaming answer is saved, so a reload mid-answer shows what's arrived. */
@@ -262,6 +263,48 @@ export class AskService {
     }
   }
 
+  /**
+   * Passages from a live call's transcript so far (see live/passages.ts), if the viewer can open
+   * its meeting; none otherwise. They carry the meeting's sensitivity, so every privacy check
+   * after retrieval treats them like any other source.
+   */
+  private async livePassages(viewer: Viewer, sessionId: string, question: string) {
+    const db = this.db(viewer.workspaceId);
+    const session = await db.liveSession.findFirst({
+      where: {
+        id: sessionId,
+        file: { AND: [fileVisibleTo(viewer), { deletedAt: null }] },
+      },
+      select: {
+        id: true,
+        file: { select: { id: true, title: true, collectionId: true, sensitivity: true } },
+      },
+    });
+    if (!session) return [];
+    const lines = await db.liveSegment.findMany({
+      where: { sessionId: session.id },
+      orderBy: [{ seq: 'asc' }, { idx: 'asc' }],
+      select: { seq: true, idx: true, startMs: true, endMs: true, text: true, speaker: true },
+    });
+    return relevantStretches(lines, question).map((s): Passage => ({
+      chunkId: `live:${session.id}:${s.key}`,
+      fileId: session.file.id,
+      title: session.file.title,
+      kind: 'AUDIO',
+      collectionId: session.file.collectionId,
+      sensitivity: session.file.sensitivity,
+      text: s.text,
+      page: null,
+      startMs: s.startMs,
+      endMs: s.endMs,
+      score: 1,
+      keywordRank: null,
+      vectorRank: null,
+      similarity: null,
+      live: true,
+    }));
+  }
+
   /** Retrieval, then the model (or the passages alone), saving the result. */
   private async answer(run: {
     viewer: Viewer;
@@ -282,10 +325,23 @@ export class AskService {
       question: retrievalQuery(run.question, previous),
       scope: run.scope,
       allowed: sensitivitiesFor(chat, run.policy),
-      limit: chat ? 8 : PASSAGES_ONLY,
+      limit: chat ? (run.scope.liveSessionId ? 5 : 8) : PASSAGES_ONLY,
       perFile: chat ? 3 : 2,
       signal: controller.signal,
     });
+    // A live call's transcript so far, under the same sensitivity rule as everything else:
+    // a route that may not read the meeting counts it as hidden and never sees it.
+    const allowed = sensitivitiesFor(chat, run.policy);
+    if (run.scope.liveSessionId) {
+      const live = await this.livePassages(viewer, run.scope.liveSessionId, run.question);
+      if (live.length && !allowed.includes(live[0]!.sensitivity)) {
+        if (live[0]!.sensitivity === 'RESTRICTED') found.hidden.restricted += 1;
+        else found.hidden.confidential += 1;
+      } else if (live.length) {
+        const limit = chat ? 8 : PASSAGES_ONLY;
+        found.passages = [...live, ...found.passages].slice(0, Math.max(limit, live.length));
+      }
+    }
     const hidden = {
       hiddenRestricted: found.hidden.restricted,
       hiddenConfidential: found.hidden.confidential,
@@ -559,7 +615,7 @@ function citationRow(
     workspaceId,
     messageId,
     n,
-    chunkId: p.chunkId,
+    chunkId: p.live ? null : p.chunkId,
     fileId: p.fileId,
     title: p.title,
     page: p.page,
